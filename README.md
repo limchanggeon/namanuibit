@@ -1,6 +1,16 @@
 # 나만의빛
 
+[![최신 릴리스](https://img.shields.io/github/v/release/limchanggeon/namanuibit?label=%EB%82%98%EB%A7%8C%EC%9D%98%EB%B9%9B&color=d6b88b)](https://github.com/limchanggeon/namanuibit/releases/latest)
+
 Lightroom의 라이브러리 / 현상 흐름을 참고한 로컬 사진 편집 프로그램입니다. 네이티브 창 안에서 동작하는 데스크톱 앱이며, 현상은 같은 프로세스 안의 Python 서버가 담당합니다. 사진을 외부 서비스로 전송하지 않습니다.
+
+## 내려받기
+
+**[나만의빛 1.0.0 — macOS (Apple Silicon)](https://github.com/limchanggeon/namanuibit/releases/download/v1.0.0/Namanuibit-1.0.0-macOS-arm64.dmg)** · 44MB · [모든 릴리스](https://github.com/limchanggeon/namanuibit/releases)
+
+dmg를 열고 `나만의빛.app`을 `Applications`로 끌어다 놓으면 됩니다. **Apple Silicon(M1 이상) 전용**이라 Intel Mac에서는 실행되지 않습니다. 처음 열 때 뜨는 "확인되지 않은 개발자" 경고는 [아래](#macos--dmg)를 참고하세요.
+
+Windows `.exe`는 아직 배포본이 없습니다. Windows에서 `build_win.ps1`로 직접 빌드할 수 있습니다.
 
 ## 실행
 
@@ -22,7 +32,7 @@ uv pip install -r requirements.lock.txt -r requirements.build.txt
 
 ## 프로그램 빌드
 
-두 형식 모두 **해당 운영체제에서만** 빌드할 수 있습니다. rawpy(LibRaw), numpy, scipy가 네이티브 확장이라 크로스 컴파일이 되지 않습니다.
+두 형식 모두 **해당 운영체제에서만**, 그리고 **빌드하는 기계의 아키텍처로만** 나옵니다. rawpy(LibRaw), numpy, scipy가 네이티브 확장이라 크로스 컴파일이 되지 않습니다. Apple Silicon에서 빌드하면 arm64 전용, Intel Mac에서 빌드하면 x86_64 전용입니다.
 
 ### macOS — `.dmg`
 
