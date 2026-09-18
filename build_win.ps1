@@ -1,5 +1,7 @@
-# Builds dist\나만의빛\나만의빛.exe on Windows. Run from PowerShell:
+﻿# Builds dist\나만의빛\나만의빛.exe on Windows. Run from PowerShell:
 #   powershell -ExecutionPolicy Bypass -File build_win.ps1
+# Keep this file UTF-8 *with BOM*: Windows PowerShell 5.1 otherwise decodes
+# it as ANSI and the Korean strings break the parser.
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 

@@ -1,4 +1,4 @@
-# Starts the packaged app headlessly enough to prove the bundle imports rawpy,
+﻿# Starts the packaged app headlessly enough to prove the bundle imports rawpy,
 # scipy and Pillow, serves the UI, and renders an export end to end.
 $ErrorActionPreference = "Stop"
 $exe = "dist\나만의빛\나만의빛.exe"
