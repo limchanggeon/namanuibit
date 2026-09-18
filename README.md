@@ -8,11 +8,23 @@ Lightroom의 라이브러리 / 현상 흐름을 참고한 로컬 사진 편집 �
 
 ## 내려받기
 
-**[나만의빛 최신판 내려받기 — macOS (Apple Silicon)](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg)** · 44MB · [모든 릴리스](https://github.com/limchanggeon/namanuibit/releases)
+| | 내려받기 | 메모 |
+| --- | --- | --- |
+| **macOS** | [나만의빛 최신판 `.dmg`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg) · 44MB | Apple Silicon(M1 이상) 전용 |
+| **Windows** | [설치 프로그램 `.exe`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe) · 43MB<br>[무설치 `.zip`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip) · 63MB | x64 전용 |
 
-dmg를 열고 `나만의빛.app`을 `Applications`로 끌어다 놓으면 됩니다. **Apple Silicon(M1 이상) 전용**이라 Intel Mac에서는 실행되지 않습니다. 처음 열 때 뜨는 "확인되지 않은 개발자" 경고는 [아래](#macos--dmg)를 참고하세요.
+[모든 릴리스](https://github.com/limchanggeon/namanuibit/releases) · 두 링크 모두 항상 최신판을 가리킵니다.
 
-Windows `.exe`는 아직 배포본이 없습니다. Windows에서 `build_win.ps1`로 직접 빌드할 수 있습니다.
+macOS는 dmg를 열고 `나만의빛.app`을 `Applications`로 끌어다 놓습니다. Intel Mac에서는 실행되지 않습니다.
+
+Windows는 설치 프로그램을 실행하거나, zip을 풀고 `나만의빛.exe`를 실행합니다. 창은 Edge WebView2 런타임을 쓰며 Windows 11과 최신 Windows 10에는 기본 포함되어 있습니다.
+
+### 처음 열 때 뜨는 경고
+
+배포본에 코드 서명이 없어서(애플 공증도, Windows Authenticode도 없습니다) 두 OS 모두 경고를 띄웁니다.
+
+- **macOS** — 앱을 **우클릭 → 열기**로 한 번만 실행하면 이후에는 그냥 열립니다. 그래도 막히면 `xattr -dr com.apple.quarantine /Applications/나만의빛.app`
+- **Windows** — SmartScreen이 "Windows에서 PC를 보호했습니다"를 띄웁니다. **추가 정보 → 실행**을 누릅니다.
 
 ## 실행
 
@@ -56,7 +68,7 @@ Windows에서 PowerShell로 실행합니다.
 powershell -ExecutionPolicy Bypass -File build_win.ps1
 ```
 
-`dist\나만의빛\나만의빛.exe`와 배포용 zip이 만들어집니다. [Inno Setup](https://jrsoftware.org/isdl.php)의 `iscc`가 PATH에 있으면 `dist\나만의빛-1.0.0-setup.exe` 설치 프로그램까지 함께 만듭니다. 창은 Edge WebView2 런타임을 사용하며 Windows 11과 최신 Windows 10에는 기본 포함되어 있습니다. 없는 경우 [WebView2 런타임](https://developer.microsoft.com/microsoft-edge/webview2/)을 설치해야 합니다.
+`dist\나만의빛\나만의빛.exe`와 배포용 zip이 만들어집니다. 윈도우 PC가 없으면 [`.github/workflows/build.yml`](.github/workflows/build.yml)이 대신합니다 — `v`로 시작하는 태그를 밀면 `windows-latest` 러너가 같은 스크립트를 돌려 zip과 설치 프로그램을 릴리스에 붙입니다. 러너는 패키징된 exe를 실제로 띄워 가져오기부터 내보내기까지 돌려보고 나서 올립니다. [Inno Setup](https://jrsoftware.org/isdl.php)의 `iscc`가 PATH에 있으면 `dist\나만의빛-1.0.0-setup.exe` 설치 프로그램까지 함께 만듭니다. 창은 Edge WebView2 런타임을 사용하며 Windows 11과 최신 Windows 10에는 기본 포함되어 있습니다. 없는 경우 [WebView2 런타임](https://developer.microsoft.com/microsoft-edge/webview2/)을 설치해야 합니다.
 
 아이콘은 `assets/make_icons.py`가 코드로 그려 `.icns`, `.ico`, 파비콘을 생성하며 빌드 스크립트가 자동으로 호출합니다.
 
