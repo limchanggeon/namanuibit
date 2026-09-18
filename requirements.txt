@@ -1,0 +1,8 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.18,<1
+rawpy>=0.25,<0.28
+Pillow>=11,<13
+numpy>=2,<3
+defusedxml>=0.7,<1
+scipy>=1.14,<2

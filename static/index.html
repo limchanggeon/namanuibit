@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>나만의빛 — 로컬 사진 스튜디오</title>
+    <link rel="icon" href="/static/icon.png" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <span class="brand"
+        >◩ <strong>나만의빛</strong><span>PHOTO STUDIO</span></span
+      >
+      <nav>
+        <button id="libraryTab">라이브러리</button
+        ><button id="editTab" class="active">현상</button>
+      </nav>
+      <div class="header-actions">
+        <span class="local"><i></i> 로컬 작업 공간</span
+        ><button id="importTop">＋ 사진 불러오기</button
+        ><button class="primary" id="exportTop">내보내기 ↗</button>
+      </div>
+    </header>
+    <main>
+      <aside class="left">
+        <div class="section-title">작업 공간 <span>⌘</span></div>
+        <button class="collection selected" id="allPhotos">
+          ▦ <span>모든 사진</span><b id="photoCount">0</b>
+        </button>
+        <div class="section-title presets-title">
+          프리셋
+          <button id="importPreset" title="XMP 프리셋 가져오기">＋</button>
+        </div>
+        <p class="muted preset-help">당신의 사진에 새로운 분위기를.</p>
+        <div class="preset-group">⌄ 나만의빛 컬렉션 <span>6</span></div>
+        <div id="presets"></div>
+        <div class="preset-group custom-group" id="customGroup" hidden>
+          ⌄ 가져온 프리셋 <span id="customCount">0</span>
+        </div>
+        <div id="customPresets"></div>
+        <button class="outline wide" id="xmpButton">
+          ↥ XMP 프리셋 가져오기
+        </button>
+        <button class="outline wide" id="presetReportButton" hidden>
+          최근 XMP 적용 내역
+        </button>
+        <div class="left-bottom">
+          <span class="small-logo">◩</span>
+          <div>
+            원본 그대로, 자유로운 편집
+            <p>모든 변경은 별도로 저장됩니다.</p>
+          </div>
+        </div>
+      </aside>
+      <section class="workspace">
+        <div class="workspace-bar">
+          <div>
+            <span class="breadcrumb">모든 사진</span><span class="slash">/</span
+            ><span id="currentName">새로운 작업</span>
+          </div>
+          <div>
+            <span class="pill" id="fileType">STUDIO</span
+            ><button id="infoButton" title="사진 정보" aria-pressed="false">
+              ⓘ
+            </button>
+          </div>
+        </div>
+        <div class="stage" id="dropZone">
+          <div class="canvas-scroll" id="canvasScroll">
+            <img id="preview" alt="편집 중인 사진" draggable="false" hidden />
+          </div>
+          <div id="empty">
+            <div class="empty-icon">◩</div>
+            <div class="eyebrow">A LITTLE LIGHT. A NEW PERSPECTIVE.</div>
+            <h1>당신만의 빛을 발견하세요.</h1>
+            <p>
+              사진을 놓고, 색을 만지고, 순간을 완성하세요.<br />RAW 원본부터
+              마지막 JPEG까지, 한 공간에서.
+            </p>
+            <button class="primary" id="emptyImport">＋ 첫 사진 불러오기</button
+            ><span class="formats">RAW · DNG · JPEG · PNG · TIFF · WEBP</span>
+          </div>
+          <span id="beforeBadge" hidden>원본</span>
+          <div id="dropHint" hidden>
+            <div class="drop-card">
+              <span>↧</span>
+              <b>여기에 놓아 불러오기</b>
+            </div>
+          </div>
+          <div id="loading" hidden>
+            <span class="spinner"></span
+            ><span id="loadingText">사진을 현상하고 있습니다</span>
+          </div>
+          <div id="photoInfo" hidden></div>
+        </div>
+        <div class="canvas-toolbar">
+          <div>
+            <button id="undo" title="실행 취소 (⌘Z)">↶</button
+            ><button id="redo" title="다시 실행 (⇧⌘Z)">↷</button
+            ><span class="separator"></span
+            ><button id="rotate" title="오른쪽 90° 회전">⟳</button
+            ><select id="crop" aria-label="가운데 자르기">
+              <option value="original">원본 비율</option>
+              <option>1:1</option>
+              <option>4:3</option>
+              <option>3:2</option>
+              <option>16:9</option>
+            </select>
+          </div>
+          <button id="compare" title="원본과 비교 (\)" aria-pressed="false">
+            ◧ 원본 비교
+          </button>
+          <div class="zoom-controls">
+            <button id="fit" class="active" title="화면 맞춤 (⌘0)">
+              화면 맞춤
+            </button>
+            <span class="separator"></span>
+            <button id="zoomOut" title="축소 (⌘−)">−</button
+            ><output id="zoomLevel" title="확대 비율">맞춤</output
+            ><button id="zoomIn" title="확대 (⌘+)">＋</button
+            ><button id="zoom" title="실제 픽셀 (⌘1)">100%</button>
+          </div>
+        </div>
+        <section class="filmstrip">
+          <div class="filmstrip-header">
+            <span id="stripTitle"
+              >필름 스트립 <b id="stripCount">0장의 사진</b></span
+            ><span id="saveStatus">편집할 사진을 불러오세요</span>
+          </div>
+          <div id="thumbnails">
+            <button class="add-photo" id="addPhoto" title="사진 불러오기 (⌘O)">
+              ＋
+            </button>
+          </div>
+        </section>
+      </section>
+      <aside class="right">
+        <div class="section-title">히스토그램 <span>RGB</span></div>
+        <canvas id="histogram" width="500" height="180"></canvas>
+        <div class="hist-labels">
+          <span>어두운 영역</span><span>밝은 영역</span>
+        </div>
+        <div class="edit-heading">
+          <h2>편집</h2>
+          <button id="reset">초기화</button>
+        </div>
+        <div class="profile-row">
+          <span>프로필</span
+          ><button id="mono" aria-pressed="false">컬러 · sRGB</button>
+        </div>
+        <input
+          type="search"
+          id="controlSearch"
+          placeholder="보정 찾기 · HSL, 커브, 노이즈…"
+          aria-label="보정 패널 검색"
+        />
+        <p id="searchEmpty" class="control-help search-empty" hidden>
+          검색과 일치하는 보정이 없습니다.
+        </p>
+        <div id="controls"></div>
+        <div class="edit-footer">보정값 자동 저장 <span>●</span></div>
+      </aside>
+    </main>
+    <footer>
+      <span>나만의빛 <b>로컬 사진 스튜디오</b></span
+      ><span id="dimensions">원본을 보존하는 비파괴 편집</span
+      ><button id="shortcutsButton" class="footer-link">단축키 ⌘/</button>
+    </footer>
+    <input
+      type="file"
+      id="photoInput"
+      multiple
+      accept=".cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.raw,.jpg,.jpeg,.png,.tif,.tiff,.webp"
+      hidden
+    /><input type="file" id="presetInput" accept=".xmp" multiple hidden />
+    <dialog id="exportDialog">
+      <div class="dialog-heading">
+        <div class="eyebrow">THE FINISHING TOUCH</div>
+        <h2>사진 내보내기</h2>
+        <p>완성된 순간을 원하는 형식으로 저장하세요.</p>
+      </div>
+      <label
+        >파일 형식<select id="exportFormat">
+          <option value="jpeg">JPEG — 공유하기 좋은 파일</option>
+          <option value="png">PNG — 무손실 이미지</option>
+          <option value="tiff">TIFF — 8비트 RGB 이미지</option>
+        </select></label
+      ><label id="qualityLabel"
+        >JPEG 품질 <output id="qualityValue">95</output
+        ><input
+          id="quality"
+          type="range"
+          min="10"
+          max="100"
+          value="95" /></label
+      ><label
+        >이미지 크기<select id="exportSize">
+          <option value="0">원본 크기</option>
+          <option value="3840">긴 변 3,840 px</option>
+          <option value="2048">긴 변 2,048 px</option>
+          <option value="1080">긴 변 1,080 px</option>
+        </select></label
+      >
+      <p class="export-note" id="exportNote">
+        sRGB 색상 프로필 포함 · 현재 보정 및 자르기 적용
+      </p>
+      <div class="export-progress" id="exportProgress" hidden>
+        <span class="spinner"></span>
+        <span id="exportProgressText">원본 크기로 처리 중…</span>
+      </div>
+      <div class="dialog-actions">
+        <button id="cancelExport">취소</button
+        ><button class="primary" id="download">내보내기 ↗</button>
+      </div>
+    </dialog>
+    <dialog id="presetReport">
+      <h2 id="presetReportTitle"></h2>
+      <p id="presetReportSummary"></p>
+      <p class="control-help" id="presetReportNote"></p>
+      <div id="presetReportDetails"></div>
+      <div class="dialog-actions">
+        <button id="closePresetReport" class="primary">닫기</button>
+      </div>
+    </dialog>
+    <dialog id="shortcuts">
+      <div class="dialog-heading">
+        <div class="eyebrow">KEYBOARD</div>
+        <h2>단축키</h2>
+      </div>
+      <dl class="shortcut-list" id="shortcutList"></dl>
+      <div class="dialog-actions">
+        <button id="closeShortcuts" class="primary">닫기</button>
+      </div>
+    </dialog>
+    <div id="toast" role="status" hidden>
+      <span id="toastText"></span
+      ><button id="toastAction" hidden class="toast-action"></button
+      ><button id="toastClose" aria-label="알림 닫기">✕</button>
+    </div>
+    <script src="/advanced-config.js"></script>
+    <script src="/static/curves.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

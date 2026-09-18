@@ -1,0 +1,10 @@
+.venv/
+data/
+__pycache__/
+.pytest_cache/
+node_modules/
+.DS_Store
+dist/
+build/
+assets/icon.iconset/
+.ruff_cache/
