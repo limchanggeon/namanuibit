@@ -4,6 +4,22 @@ $ErrorActionPreference = "Stop"
 $exe = "dist\나만의빛\나만의빛.exe"
 if (-not (Test-Path $exe)) { throw "missing $exe" }
 
+# Entry names must be UTF-8 and slash separated or the Korean folder unpacks
+# as mojibake, or as one file with a backslash in its name.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "dist\Namanuibit-windows-x64.zip").Path)
+try {
+    $names = $archive.Entries | ForEach-Object { $_.FullName }
+    $backslashed = $names | Where-Object { $_ -match '\\' }
+    if ($backslashed) { throw "zip entries use backslashes: $($backslashed[0])" }
+    if (-not ($names -contains "나만의빛/나만의빛.exe")) {
+        throw "나만의빛/나만의빛.exe missing from the archive; first entry is $($names[0])"
+    }
+    Write-Host "archive: $($names.Count) entries, names intact"
+} finally {
+    $archive.Dispose()
+}
+
 $env:LIGHTLOOM_PORT = "8791"
 $env:LIGHTLOOM_DATA = Join-Path $env:RUNNER_TEMP "library"
 $app = Start-Process -FilePath $exe -PassThru

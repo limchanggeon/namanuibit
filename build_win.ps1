@@ -23,16 +23,31 @@ if (-not (Test-Path "dist\$AppName\$AppName.exe")) {
     throw "PyInstaller did not produce dist\$AppName\$AppName.exe"
 }
 
-# Compress-Archive writes entry names in the system codepage on Windows
-# PowerShell, which mangles the Korean file names; force UTF-8 instead.
+# The archive is written entry by entry because the two built-in options both
+# get it wrong on Windows PowerShell: Compress-Archive writes entry names in the
+# system codepage, mangling the Korean names, and .NET Framework's
+# ZipFile.CreateFromDirectory separates them with backslashes, which the ZIP
+# spec does not allow. Entries below are UTF-8 and slash separated.
 Remove-Item -Force $Zip -ErrorAction SilentlyContinue
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    (Resolve-Path "dist\$AppName").Path,
+$root = (Resolve-Path "dist\$AppName").Path
+$stream = [System.IO.File]::Open(
     (Join-Path (Resolve-Path "dist").Path (Split-Path $Zip -Leaf)),
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $true,
-    [System.Text.Encoding]::UTF8)
+    [System.IO.FileMode]::Create)
+$archive = New-Object System.IO.Compression.ZipArchive(
+    $stream, [System.IO.Compression.ZipArchiveMode]::Create, $false, [System.Text.Encoding]::UTF8)
+try {
+    foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File) {
+        $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $archive, $file.FullName, "$AppName/$relative",
+            [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+} finally {
+    $archive.Dispose()
+    $stream.Dispose()
+}
 
 # Optional single-file installer, when Inno Setup is available.
 $iscc = $null
