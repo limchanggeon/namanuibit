@@ -638,11 +638,73 @@ $("infoButton").onclick = () => {
 // --- zoom and pan ------------------------------------------------------------
 // Scale is relative to the preview proxy (long edge 1,600 px), not the original.
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 1, 1.5, 2, 3, 4];
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 8;
 let zoomMode = "fit";
-function applyZoom(anchor) {
+let gestureUntil = 0;
+function viewport() {
+  const box = $("canvasScroll"),
+    style = getComputedStyle(box);
+  return {
+    w:
+      box.clientWidth -
+      parseFloat(style.paddingLeft) -
+      parseFloat(style.paddingRight),
+    h:
+      box.clientHeight -
+      parseFloat(style.paddingTop) -
+      parseFloat(style.paddingBottom),
+  };
+}
+// What "화면 맞춤" resolves to right now. The fitted view never upscales, which
+// is why 1 is the ceiling here.
+function fitScale() {
+  const img = $("preview");
+  if (!img.naturalWidth) return 1;
+  const { w, h } = viewport();
+  return Math.min(1, w / img.naturalWidth, h / img.naturalHeight) || 1;
+}
+function currentScale() {
+  return zoomMode === "fit" ? fitScale() : zoomMode;
+}
+function updateZoomChrome() {
+  const img = $("preview");
+  const show = (scale) =>
+    ($("zoomLevel").textContent = scale
+      ? Math.round(scale * 100) + "%"
+      : "맞춤");
+  if (zoomMode === "fit")
+    // The fit ratio is only known once the browser has laid the image out.
+    requestAnimationFrame(() => {
+      if (zoomMode !== "fit") return;
+      show(
+        img.naturalWidth
+          ? img.getBoundingClientRect().width / img.naturalWidth
+          : 0,
+      );
+    });
+  else show(zoomMode);
+  $("fit").classList.toggle("active", zoomMode === "fit");
+  $("zoom").classList.toggle(
+    "active",
+    zoomMode !== "fit" && Math.abs(zoomMode - 1) < 0.005,
+  );
+  $("zoomIn").disabled =
+    !current || (zoomMode !== "fit" && zoomMode >= ZOOM_MAX);
+  $("zoomOut").disabled = !current || zoomMode === "fit";
+}
+function applyZoom(pointer) {
   const img = $("preview"),
     scroll = $("canvasScroll");
-  const previous = {
+  const anchored =
+    pointer && img.naturalWidth ? img.getBoundingClientRect() : null;
+  const ratioX = anchored?.width
+    ? (pointer.clientX - anchored.left) / anchored.width
+    : 0.5;
+  const ratioY = anchored?.height
+    ? (pointer.clientY - anchored.top) / anchored.height
+    : 0.5;
+  const centre = {
     left:
       (scroll.scrollLeft + scroll.clientWidth / 2) / (scroll.scrollWidth || 1),
     top:
@@ -651,51 +713,49 @@ function applyZoom(anchor) {
   if (zoomMode === "fit") {
     img.classList.remove("zoomed");
     img.style.width = img.style.height = "";
-    // The fit ratio is only known once the browser has laid the image out.
-    requestAnimationFrame(() => {
-      if (zoomMode !== "fit") return;
-      $("zoomLevel").textContent = img.naturalWidth
-        ? Math.round(
-            (img.getBoundingClientRect().width / img.naturalWidth) * 100,
-          ) + "%"
-        : "맞춤";
-    });
   } else {
     img.classList.add("zoomed");
     img.style.width = Math.round((img.naturalWidth || 0) * zoomMode) + "px";
     img.style.height = "auto";
-    $("zoomLevel").textContent = Math.round(zoomMode * 100) + "%";
   }
-  $("fit").classList.toggle("active", zoomMode === "fit");
-  $("zoom").classList.toggle("active", zoomMode === 1);
-  $("zoomIn").disabled = !current || zoomMode === ZOOM_STEPS.at(-1);
-  $("zoomOut").disabled = !current || zoomMode === "fit";
+  updateZoomChrome();
   if (zoomMode === "fit") return;
-  const point = anchor || previous;
-  scroll.scrollLeft = point.left * scroll.scrollWidth - scroll.clientWidth / 2;
-  scroll.scrollTop = point.top * scroll.scrollHeight - scroll.clientHeight / 2;
+  if (anchored) {
+    // Pin whatever sat under the cursor so zooming tracks where you are looking.
+    const after = img.getBoundingClientRect();
+    scroll.scrollLeft += after.left + ratioX * after.width - pointer.clientX;
+    scroll.scrollTop += after.top + ratioY * after.height - pointer.clientY;
+    return;
+  }
+  scroll.scrollLeft = centre.left * scroll.scrollWidth - scroll.clientWidth / 2;
+  scroll.scrollTop = centre.top * scroll.scrollHeight - scroll.clientHeight / 2;
 }
-function setZoom(next) {
+function setZoom(next, pointer) {
   if (!current) return;
   zoomMode = next;
-  applyZoom();
+  applyZoom(pointer);
 }
-function stepZoom(direction) {
+// Below the fitted ratio there is only empty canvas, so snap back to 화면 맞춤.
+function clampZoom(scale, pointer) {
+  const fit = fitScale();
+  const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+  setZoom(next <= fit + 1e-4 ? "fit" : next, pointer);
+}
+function zoomBy(factor, pointer) {
+  if (!current || !$("preview").naturalWidth) return;
+  clampZoom(currentScale() * factor, pointer);
+}
+function stepZoom(direction, pointer) {
   if (!current) return;
-  const img = $("preview"),
-    scroll = $("canvasScroll");
-  const fitScale = img.naturalWidth
-    ? img.getBoundingClientRect().width / img.naturalWidth
-    : 1;
-  const currentScale = zoomMode === "fit" ? fitScale : zoomMode;
+  const fit = fitScale(),
+    scale = currentScale();
   const next =
     direction > 0
-      ? ZOOM_STEPS.find((z) => z > currentScale + 0.001)
-      : [...ZOOM_STEPS].reverse().find((z) => z < currentScale - 0.001);
-  if (direction < 0 && (!next || next <= fitScale)) return setZoom("fit");
+      ? ZOOM_STEPS.find((z) => z > scale + 0.001)
+      : [...ZOOM_STEPS].reverse().find((z) => z < scale - 0.001);
+  if (direction < 0 && (!next || next <= fit)) return setZoom("fit");
   if (!next) return;
-  setZoom(next);
-  scroll.scrollTo({ left: scroll.scrollWidth / 2 - scroll.clientWidth / 2 });
+  setZoom(next, pointer);
 }
 $("fit").onclick = () => setZoom("fit");
 $("zoom").onclick = () => {
@@ -709,15 +769,45 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => applyZoom(), 120);
 });
+// Wheel and two-finger scroll zoom the photo, the way Lightroom's develop view
+// does; panning is a drag. A trackpad pinch arrives either as gesture events
+// (WebKit) or as a wheel event with ctrlKey set (Chromium/Edge), so both paths
+// are handled and the gesture one wins while it is running.
+function wheelPixels(e) {
+  const perUnit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+  return e.deltaY * perUnit;
+}
 $("canvasScroll").addEventListener(
   "wheel",
   (e) => {
-    if (!current || !(e.ctrlKey || e.metaKey)) return;
+    if (!current || !$("preview").naturalWidth) return;
     e.preventDefault();
-    stepZoom(e.deltaY < 0 ? 1 : -1);
+    if (Date.now() < gestureUntil) return;
+    const pinch = e.ctrlKey || e.metaKey;
+    const delta = Math.max(-120, Math.min(120, wheelPixels(e)));
+    zoomBy(Math.exp(-delta / (pinch ? 120 : 400)), e);
   },
   { passive: false },
 );
+let gestureBase = 1;
+$("canvasScroll").addEventListener("gesturestart", (e) => {
+  if (!current || !$("preview").naturalWidth) return;
+  e.preventDefault();
+  gestureUntil = Infinity;
+  gestureBase = currentScale();
+});
+$("canvasScroll").addEventListener("gesturechange", (e) => {
+  if (gestureUntil !== Infinity) return;
+  e.preventDefault();
+  clampZoom(gestureBase * e.scale, e);
+});
+for (const type of ["gestureend", "gesturecancel"])
+  $("canvasScroll").addEventListener(type, (e) => {
+    if (gestureUntil !== Infinity) return;
+    e.preventDefault();
+    // WebKit trails a pinch with wheel events; ignore those for a moment.
+    gestureUntil = Date.now() + 250;
+  });
 // Grab-to-pan once the image is larger than the viewport.
 let panning = null;
 $("canvasScroll").addEventListener("pointerdown", (e) => {
@@ -839,6 +929,8 @@ const SHORTCUTS = [
   [`${MOD} 0`, "화면 맞춤"],
   [`${MOD} 1`, "100% 보기"],
   [`${MOD} + · ${MOD} −`, "확대 · 축소"],
+  ["휠 · 트랙패드 핀치", "커서 위치 기준 확대 · 축소"],
+  ["드래그", "확대했을 때 사진 옮기기"],
   ["R", "오른쪽 90° 회전"],
   ["I", "사진 정보"],
   [`${MOD} /`, "이 창 열기"],

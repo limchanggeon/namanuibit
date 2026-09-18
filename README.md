@@ -6,7 +6,7 @@ Lightroom의 라이브러리 / 현상 흐름을 참고한 로컬 사진 편집 �
 
 ## 내려받기
 
-**[나만의빛 1.0.0 — macOS (Apple Silicon)](https://github.com/limchanggeon/namanuibit/releases/download/v1.0.0/Namanuibit-1.0.0-macOS-arm64.dmg)** · 44MB · [모든 릴리스](https://github.com/limchanggeon/namanuibit/releases)
+**[나만의빛 최신판 내려받기 — macOS (Apple Silicon)](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg)** · 44MB · [모든 릴리스](https://github.com/limchanggeon/namanuibit/releases)
 
 dmg를 열고 `나만의빛.app`을 `Applications`로 끌어다 놓으면 됩니다. **Apple Silicon(M1 이상) 전용**이라 Intel Mac에서는 실행되지 않습니다. 처음 열 때 뜨는 "확인되지 않은 개발자" 경고는 [아래](#macos--dmg)를 참고하세요.
 
@@ -77,7 +77,7 @@ macOS 번들 안의 실행 파일만 `Contents/MacOS/Namanuibit`로 둡니다. `
 - 90도 회전과 **중앙 기준** 비율 자르기 (1:1, 4:3, 3:2, 16:9)
 - 6개 기본 프리셋과 XMP 가져오기 / 한 번 클릭해 적용
 - 보정 전후 비교, 실행 취소 / 다시 실행, 자동 저장, RGB 히스토그램
-- 화면 맞춤 / 25–400% 확대와 드래그 패닝, ⌘ 스크롤 확대
+- 화면 맞춤 / 확대와 드래그 패닝. 휠과 트랙패드 핀치로 커서 위치 기준 확대·축소
 - 원본 크기 또는 축소 JPEG / PNG / TIFF 출력, JPEG 품질 설정, sRGB ICC 포함
 - 데스크톱 앱에서는 네이티브 저장 대화상자로 위치를 고르고, 저장 후 폴더에서 바로 확인
 - 창 메뉴(사진 / 보정)와 단축키, 편집이 남아 있는 보정 패널 표시

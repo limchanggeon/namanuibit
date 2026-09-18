@@ -3,10 +3,12 @@
 """PyInstaller build for the 나만의빛 desktop app (macOS .app / Windows .exe)."""
 
 import sys
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 APP_NAME = "나만의빛"
-VERSION = "1.0.0"
+VERSION = (Path(SPECPATH) / "VERSION").read_text().strip()
 IS_MAC = sys.platform == "darwin"
 # codesign silently skips sealing a bundle whose CFBundleExecutable is not
 # ASCII, so on macOS the inner binary keeps a plain name and only the bundle

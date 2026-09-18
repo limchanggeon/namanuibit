@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="나만의빛"
 BINARY_NAME="Namanuibit"   # must match BINARY_NAME in lightloom.spec
-VERSION="1.0.0"
+VERSION="$(cat VERSION)"
 DMG="dist/${APP_NAME}-${VERSION}.dmg"
 
 if [ ! -x .venv/bin/python ]; then

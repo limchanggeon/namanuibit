@@ -153,6 +153,61 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   w.document.getElementById("fit").click();
   assert(!w.document.getElementById("preview").classList.contains("zoomed"));
 
+  // Wheel and trackpad pinch zoom around the cursor; jsdom has no layout, so
+  // the preview reports a size the way a loaded image would.
+  const preview = w.document.getElementById("preview");
+  for (const [prop, value] of [
+    ["naturalWidth", 1600],
+    ["naturalHeight", 1067],
+  ])
+    Object.defineProperty(preview, prop, { value, configurable: true });
+  const canvas = w.document.getElementById("canvasScroll");
+  const wheel = (init) =>
+    canvas.dispatchEvent(
+      new w.WheelEvent("wheel", {
+        cancelable: true,
+        clientX: 400,
+        clientY: 300,
+        ...init,
+      }),
+    );
+
+  wheel({ deltaY: -120 });
+  assert(preview.classList.contains("zoomed"));
+  const zoomedIn = Number(
+    w.document.getElementById("zoomLevel").textContent.replace("%", ""),
+  );
+  assert(zoomedIn > 100, `wheel up should zoom in, got ${zoomedIn}%`);
+
+  // A pinch moves faster than the same wheel delta.
+  w.document.getElementById("fit").click();
+  wheel({ deltaY: -120, ctrlKey: true });
+  const pinched = Number(
+    w.document.getElementById("zoomLevel").textContent.replace("%", ""),
+  );
+  assert(pinched > zoomedIn, `pinch should outpace the wheel, got ${pinched}%`);
+
+  // Zooming back out past the fitted ratio returns to 화면 맞춤.
+  for (let i = 0; i < 20 && preview.classList.contains("zoomed"); i++)
+    wheel({ deltaY: 120 });
+  assert(!preview.classList.contains("zoomed"));
+  assert(w.document.getElementById("fit").classList.contains("active"));
+
+  // WebKit's own pinch events carry an absolute scale.
+  const gesture = (type, scale) => {
+    const event = new w.Event(type, { cancelable: true });
+    Object.assign(event, { scale, clientX: 400, clientY: 300 });
+    canvas.dispatchEvent(event);
+  };
+  gesture("gesturestart", 1);
+  gesture("gesturechange", 2.5);
+  assert.equal(w.document.getElementById("zoomLevel").textContent, "250%");
+  gesture("gestureend", 2.5);
+  // Trailing wheel events right after a pinch are ignored.
+  wheel({ deltaY: -120 });
+  assert.equal(w.document.getElementById("zoomLevel").textContent, "250%");
+  w.document.getElementById("fit").click();
+
   // Desktop shell: export asks for a path and posts it instead of downloading.
   let asked = null;
   let revealed = null;
@@ -180,7 +235,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   await wait(220);
   console.log(
-    "PASS: photo selection, preset apply, autosave, undo/redo, rotate/crop, original comparison, reset, panel markers, control search, zoom, native export",
+    "PASS: photo selection, preset apply, autosave, undo/redo, rotate/crop, original comparison, reset, panel markers, control search, zoom (buttons, wheel, pinch), native export",
   );
   w.close();
 })().catch((e) => {

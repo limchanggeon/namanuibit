@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
 $AppName = "나만의빛"
-$Version = "1.0.0"
+$Version = (Get-Content VERSION -Raw).Trim()
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
     uv venv --python 3.12
