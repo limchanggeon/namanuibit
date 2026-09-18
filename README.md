@@ -4,6 +4,8 @@
 
 Lightroom의 라이브러리 / 현상 흐름을 참고한 로컬 사진 편집 프로그램입니다. 네이티브 창 안에서 동작하는 데스크톱 앱이며, 현상은 같은 프로세스 안의 Python 서버가 담당합니다. 사진을 외부 서비스로 전송하지 않습니다.
 
+![현상 화면. 왼쪽에 프리셋, 가운데에 편집 중인 사진, 오른쪽에 보정 패널](docs/screenshots/develop.png)
+
 ## 내려받기
 
 **[나만의빛 최신판 내려받기 — macOS (Apple Silicon)](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg)** · 44MB · [모든 릴리스](https://github.com/limchanggeon/namanuibit/releases)
@@ -81,6 +83,20 @@ macOS 번들 안의 실행 파일만 `Contents/MacOS/Namanuibit`로 둡니다. `
 - 원본 크기 또는 축소 JPEG / PNG / TIFF 출력, JPEG 품질 설정, sRGB ICC 포함
 - 데스크톱 앱에서는 네이티브 저장 대화상자로 위치를 고르고, 저장 후 폴더에서 바로 확인
 - 창 메뉴(사진 / 보정)와 단축키, 편집이 남아 있는 보정 패널 표시
+
+## 화면
+
+**포인트 톤 커브와 세부 보정** — 커브 위를 클릭해 점을 더하고 끌어서 옮깁니다. 채널마다 따로 잡을 수 있고, 값이 남아 있는 패널에는 점이 붙습니다.
+
+![포인트 톤 커브 패널이 열린 화면](docs/screenshots/curve.png)
+
+**100% 확대** — 휠이나 트랙패드 핀치로 커서 아래 지점을 고정한 채 확대·축소하고, 드래그로 옮깁니다.
+
+![사진을 100%로 확대해 디테일을 보고 있는 화면](docs/screenshots/zoom.png)
+
+**내보내기** — 형식과 크기를 고르면 네이티브 저장 대화상자가 열립니다. sRGB 프로필을 넣어 저장합니다.
+
+![내보내기 대화상자](docs/screenshots/export.png)
 
 ## 보관 위치
 
