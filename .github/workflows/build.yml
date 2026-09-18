@@ -1,0 +1,54 @@
+name: build
+
+# rawpy / numpy / scipy ship compiled extensions, so a Windows build has to run
+# on Windows. Tagging a release builds the .exe here and attaches it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build
+        env:
+          # Build against the interpreter setup-python installed rather than a
+          # standalone one, which PyInstaller handles less reliably.
+          UV_PYTHON_PREFERENCE: only-system
+        run: powershell -ExecutionPolicy Bypass -File build_win.ps1
+
+      - name: Smoke test the packaged app
+        run: .\.github\scripts\smoke_windows.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            dist/Namanuibit-windows-x64.zip
+            dist/Namanuibit-windows-x64-setup.exe
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release upload "$env:GITHUB_REF_NAME"
+          dist/Namanuibit-windows-x64.zip
+          dist/Namanuibit-windows-x64-setup.exe
+          --clobber

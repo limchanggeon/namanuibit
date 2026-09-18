@@ -5,6 +5,8 @@ Set-Location -Path $PSScriptRoot
 
 $AppName = "나만의빛"
 $Version = (Get-Content VERSION -Raw).Trim()
+# Distribution files keep ASCII names so their download URLs stay readable.
+$Zip = "dist\Namanuibit-windows-x64.zip"
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
     uv venv --python 3.12
@@ -15,19 +17,38 @@ uv pip install -r requirements.lock.txt -r requirements.build.txt
 Remove-Item -Recurse -Force build, "dist\$AppName" -ErrorAction SilentlyContinue
 .venv\Scripts\python.exe -m PyInstaller --noconfirm --clean lightloom.spec
 
-# A single distributable file. Users with WebView2 already installed (Win 11 and
-# up-to-date Win 10) can run it straight from the zip.
-$zip = "dist\$AppName-$Version-windows.zip"
-Remove-Item -Force $zip -ErrorAction SilentlyContinue
-Compress-Archive -Path "dist\$AppName\*" -DestinationPath $zip
+if (-not (Test-Path "dist\$AppName\$AppName.exe")) {
+    throw "PyInstaller did not produce dist\$AppName\$AppName.exe"
+}
 
-# Optional single-file installer, if Inno Setup is on PATH.
-if (Get-Command iscc -ErrorAction SilentlyContinue) {
-    iscc /DMyAppVersion=$Version packaging\lightloom.iss
+# Compress-Archive writes entry names in the system codepage on Windows
+# PowerShell, which mangles the Korean file names; force UTF-8 instead.
+Remove-Item -Force $Zip -ErrorAction SilentlyContinue
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    (Resolve-Path "dist\$AppName").Path,
+    (Join-Path (Resolve-Path "dist").Path (Split-Path $Zip -Leaf)),
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $true,
+    [System.Text.Encoding]::UTF8)
+
+# Optional single-file installer, when Inno Setup is available.
+$iscc = $null
+$command = Get-Command iscc -ErrorAction SilentlyContinue
+if ($command) {
+    $iscc = $command.Source
 } else {
-    Write-Host "Inno Setup(iscc)가 없어 설치 프로그램은 건너뜁니다. https://jrsoftware.org/isdl.php"
+    foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        $candidate = Join-Path $base "Inno Setup 6\ISCC.exe"
+        if ($base -and (Test-Path $candidate)) { $iscc = $candidate; break }
+    }
+}
+if ($iscc) {
+    & $iscc "/DMyAppVersion=$Version" "packaging\lightloom.iss"
+} else {
+    Write-Host "Inno Setup(ISCC.exe)가 없어 설치 프로그램은 건너뜁니다. https://jrsoftware.org/isdl.php"
 }
 
 Write-Host ""
 Write-Host "완료: dist\$AppName\$AppName.exe"
-Write-Host "      $zip"
+Write-Host "      $Zip"
