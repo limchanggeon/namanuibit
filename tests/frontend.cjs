@@ -256,12 +256,20 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   w.document.getElementById("toastAction").click();
   assert.equal(revealed, SAVED);
 
-  // WebP joins the format list.
-  assert(
-    [...w.document.getElementById("exportFormat").options].some(
-      (o) => o.value === "webp",
-    ),
-  );
+  // WebP joins the format list and keeps the quality slider, named for it.
+  const fmt = w.document.getElementById("exportFormat");
+  assert([...fmt.options].some((o) => o.value === "webp"));
+  const qualityLabel = w.document.getElementById("qualityLabel");
+  for (const [format, visible, name] of [
+    ["webp", true, "WebP 품질 "],
+    ["png", false, null],
+    ["jpeg", true, "JPEG 품질 "],
+  ]) {
+    fmt.value = format;
+    fmt.dispatchEvent(new w.Event("change"));
+    assert.equal(qualityLabel.hidden, !visible, `${format} quality visibility`);
+    if (name) assert.equal(qualityLabel.firstChild.textContent, name);
+  }
 
   // The crop tool works on fractions of the frame and survives apply.
   w.document.getElementById("cropTool").click();

@@ -627,11 +627,14 @@ function clearCurrent() {
 }
 $("deletePhoto").onclick = () =>
   current &&
-  removePhotos([current.id], `${current.name}을(를) 라이브러리에서 지웁니다.`);
+  removePhotos(
+    [current.id],
+    `${current.name} 파일을 라이브러리에서 지웁니다. 원본은 그대로 남습니다.`,
+  );
 $("deleteSelected").onclick = () =>
   removePhotos(
     [...selected],
-    `선택한 ${selected.size}장을 라이브러리에서 지웁니다.`,
+    `선택한 ${selected.size}장을 라이브러리에서 지웁니다. 원본은 그대로 남습니다.`,
   );
 $("selectAll").onclick = () => {
   selected = new Set(photos.map((p) => p.id));
@@ -1174,12 +1177,19 @@ $("exportTop").onclick = () => {
   if (!photos.length) return toast("내보낼 사진이 없습니다.");
   $("exportScope").value = current ? "current" : "all";
   syncExportScope();
+  syncQualityLabel();
   $("exportDialog").showModal();
 };
 $("cancelExport").onclick = () => $("exportDialog").close();
 $("quality").oninput = (e) => ($("qualityValue").textContent = e.target.value);
-$("exportFormat").onchange = (e) =>
-  ($("qualityLabel").hidden = e.target.value !== "jpeg");
+// WebP is lossy too, so it gets the same quality slider — with its own name.
+function syncQualityLabel() {
+  const format = $("exportFormat").value;
+  $("qualityLabel").hidden = !["jpeg", "webp"].includes(format);
+  $("qualityLabel").firstChild.textContent =
+    (format === "webp" ? "WebP" : "JPEG") + " 품질 ";
+}
+$("exportFormat").onchange = syncQualityLabel;
 function exportSuffix(format) {
   return format === "jpeg" ? ".jpg" : format === "tiff" ? ".tif" : "." + format;
 }

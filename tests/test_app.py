@@ -275,3 +275,9 @@ def test_single_export_job_keeps_bytes_for_browser_download(client):
     got = client.get(f"/api/export/{jid}/file")
     assert got.status_code == 200
     assert Image.open(BytesIO(got.content)).format == "JPEG"
+
+
+def test_app_assets_are_never_cached(client):
+    # A stale page after an update is worse than re-reading a few local files.
+    for url in ["/", "/static/app.js", "/advanced-config.js", "/api/health"]:
+        assert client.get(url).headers["cache-control"] == "no-store", url

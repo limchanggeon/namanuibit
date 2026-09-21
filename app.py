@@ -26,6 +26,21 @@ JOB_LOCK = threading.Lock()
 POOL = None
 POOL_LOCK = threading.Lock()
 app = FastAPI(title="나만의빛")
+
+
+@app.middleware("http")
+async def no_store(request, call_next):
+    """Never let the webview cache the app itself.
+
+    The window keeps its cache on disk between launches, so without this an
+    updated build can come up running the previous version's page. Everything
+    here is served from loopback, so caching buys nothing anyway.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 FORMAT_PATTERN = "^(" + "|".join(FORMATS) + ")$"
 
