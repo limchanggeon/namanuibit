@@ -1155,3 +1155,228 @@ img {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --- crop tool ------------------------------------------------------------- */
+#cropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: default;
+}
+#cropBox {
+  position: absolute;
+  border: 1px solid #f0e6d4;
+  /* The shadow is what dims everything outside the selection. */
+  box-shadow: 0 0 0 9999px #0f1213b8;
+  cursor: move;
+}
+.crop-thirds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+        90deg,
+        transparent 33.2%,
+        #ffffff38 33.3%,
+        transparent 33.4%,
+        transparent 66.5%,
+        #ffffff38 66.6%,
+        transparent 66.7%
+      )
+      no-repeat,
+    linear-gradient(
+        180deg,
+        transparent 33.2%,
+        #ffffff38 33.3%,
+        transparent 33.4%,
+        transparent 66.5%,
+        #ffffff38 66.6%,
+        transparent 66.7%
+      )
+      no-repeat;
+}
+.crop-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: #f0e6d4;
+  border-radius: 2px;
+  box-shadow: 0 1px 4px #0008;
+}
+.crop-handle[data-handle="nw"] {
+  top: -8px;
+  left: -8px;
+  cursor: nwse-resize;
+}
+.crop-handle[data-handle="ne"] {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+.crop-handle[data-handle="sw"] {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
+}
+.crop-handle[data-handle="se"] {
+  bottom: -8px;
+  right: -8px;
+  cursor: nwse-resize;
+}
+.crop-handle[data-handle="n"] {
+  top: -8px;
+  left: 50%;
+  margin-left: -8px;
+  cursor: ns-resize;
+}
+.crop-handle[data-handle="s"] {
+  bottom: -8px;
+  left: 50%;
+  margin-left: -8px;
+  cursor: ns-resize;
+}
+.crop-handle[data-handle="w"] {
+  left: -8px;
+  top: 50%;
+  margin-top: -8px;
+  cursor: ew-resize;
+}
+.crop-handle[data-handle="e"] {
+  right: -8px;
+  top: 50%;
+  margin-top: -8px;
+  cursor: ew-resize;
+}
+.cropping .canvas-scroll {
+  pointer-events: none;
+}
+.crop-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid #2e3234;
+  background: #1d2022;
+  font-size: 10px;
+  color: #98a1a2;
+  flex-shrink: 0;
+}
+.crop-bar > div {
+  display: flex;
+  gap: 6px;
+}
+.crop-bar .primary {
+  padding: 8px 16px;
+}
+#cropTool.active {
+  background: #d6b88b1f;
+  color: var(--accent);
+}
+#deletePhoto {
+  font-size: 12px;
+}
+#deletePhoto:hover:not(:disabled) {
+  background: #7e40401f;
+  color: #e8a3a3;
+}
+
+/* --- library selection ----------------------------------------------------- */
+.strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.strip-actions button {
+  font-size: 9px;
+  padding: 4px 8px;
+  border: 1px solid #3c4244;
+}
+#deleteSelected {
+  color: #dda5a5;
+  border-color: #5c4042;
+}
+.thumb.picked {
+  border-color: #d6b88b;
+  background: #d6b88b1f;
+  box-shadow: inset 0 0 0 1px #d6b88b66;
+}
+.thumb.picked:after {
+  content: "✓";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 15px;
+  height: 15px;
+  line-height: 15px;
+  text-align: center;
+  font-size: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #24211c;
+}
+
+/* --- progress -------------------------------------------------------------- */
+.progress-track {
+  width: 100%;
+  height: 3px;
+  border-radius: 3px;
+  background: #ffffff14;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.export-progress {
+  display: block;
+}
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+#exportElapsed {
+  margin: 8px 0 0;
+}
+.loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+  padding: 24px 30px;
+  border: 1px solid #3b4042;
+  border-radius: 10px;
+  background: #1e2123ee;
+  text-align: center;
+}
+.loading-note {
+  font-size: 9px;
+  color: #7f8a8b;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
+/* --- destructive confirmation ---------------------------------------------- */
+#confirmDialog {
+  width: 380px;
+}
+.confirm-body {
+  color: #9aa3a4;
+  font-size: 11px;
+  line-height: 1.8;
+  margin: 12px 0 26px;
+}
+.danger {
+  background: #b9736e;
+  color: #1d1616;
+}
+.danger:hover {
+  background: #c98a85;
+  color: #160f0f;
+}

@@ -18,15 +18,33 @@ const dom = new JSDOM(fs.readFileSync("static/index.html", "utf8"), {
   pretendToBeVisual: true,
 });
 const w = dom.window;
+const SAVED = "/Users/me/Pictures/test-나만의빛.jpg";
+let jobPolls = 0;
 w.fetch = async (url, opts = {}) => {
   calls.push({ url, ...opts });
+  const body = () => {
+    if (url === "/api/photos") return [photo];
+    if (url === "/api/export") return { job: "job1", total: 1 };
+    if (url.startsWith("/api/export/job1")) {
+      // Report one unfinished poll first so the progress path is exercised.
+      jobPolls++;
+      return {
+        id: "job1",
+        total: 1,
+        done: jobPolls > 1 ? 1 : 0,
+        current: jobPolls > 1 ? null : photo.name,
+        written: jobPolls > 1 ? [SAVED] : [],
+        failed: [],
+        finished: jobPolls > 1,
+        elapsed: 0.4 * jobPolls,
+      };
+    }
+    return { path: SAVED };
+  };
   return {
     ok: true,
-    json: async () =>
-      url === "/api/photos"
-        ? [photo]
-        : { path: "/Users/me/Pictures/test-나만의빛.jpg" },
-    blob: async () => new w.Blob(["test"]),
+    json: async () => body(),
+    blob: async () => new w.Blob(["x"]),
   };
 };
 w.URL.createObjectURL = () => "blob:test";
@@ -222,20 +240,77 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   };
   w.dispatchEvent(new w.Event("pywebviewready"));
   assert(w.document.body.classList.contains("desktop"));
+  w.document.getElementById("exportTop").click();
   w.document.getElementById("download").click();
-  await wait(40);
+  await wait(1200);
   assert.deepEqual(asked, { name: "test-나만의빛.jpg", format: "jpeg" });
-  const exported = calls.filter((c) => c.url.endsWith("/export")).at(-1);
-  assert.equal(
-    JSON.parse(exported.body).dest,
-    "/Users/me/Pictures/test-나만의빛.jpg",
+  const exported = calls.filter((c) => c.url === "/api/export").at(-1);
+  const sent = JSON.parse(exported.body);
+  assert.equal(sent.dest, SAVED);
+  assert.equal(sent.photos.length, 1);
+  assert.equal(sent.photos[0].id, photo.id);
+  assert(
+    jobPolls >= 2,
+    `job should be polled until finished, polled ${jobPolls}`,
   );
   w.document.getElementById("toastAction").click();
-  assert.equal(revealed, "/Users/me/Pictures/test-나만의빛.jpg");
+  assert.equal(revealed, SAVED);
+
+  // WebP joins the format list.
+  assert(
+    [...w.document.getElementById("exportFormat").options].some(
+      (o) => o.value === "webp",
+    ),
+  );
+
+  // The crop tool works on fractions of the frame and survives apply.
+  w.document.getElementById("cropTool").click();
+  await wait(60);
+  assert.equal(w.document.getElementById("cropOverlay").hidden, false);
+  const ratio = w.document.getElementById("crop");
+  ratio.value = "1:1";
+  ratio.dispatchEvent(new w.Event("change"));
+  w.document.getElementById("cropApply").click();
+  await wait(60);
+  const cropped = calls
+    .filter((c) => c.method === "PUT")
+    .map((c) => JSON.parse(c.body))
+    .at(-1);
+  // A 6000x4000 frame squared off leaves two thirds of the width, centred.
+  assert(
+    Math.abs(cropped.crop_w - 2 / 3) < 0.01,
+    `crop_w was ${cropped.crop_w}`,
+  );
+  assert.equal(cropped.crop_h, 1);
+  assert(
+    Math.abs(cropped.crop_x - 1 / 6) < 0.01,
+    `crop_x was ${cropped.crop_x}`,
+  );
+  assert.equal(w.document.getElementById("cropOverlay").hidden, true);
+
+  // Deleting asks first, then drops the photo from the library.
+  w.document.getElementById("deletePhoto").click();
+  await wait(30);
+  assert.equal(
+    w.document.getElementById("confirmDialog").hasAttribute("open"),
+    true,
+  );
+  w.document.getElementById("confirmOk").click();
+  await wait(60);
+  assert(
+    calls.some(
+      (c) => c.method === "DELETE" && c.url === `/api/photos/${photo.id}`,
+    ),
+  );
+  assert.equal(w.document.querySelectorAll(".thumb").length, 0);
+  assert.equal(
+    w.document.getElementById("currentName").textContent,
+    "새로운 작업",
+  );
 
   await wait(220);
   console.log(
-    "PASS: photo selection, preset apply, autosave, undo/redo, rotate/crop, original comparison, reset, panel markers, control search, zoom (buttons, wheel, pinch), native export",
+    "PASS: selection, presets, autosave, undo/redo, rotate, compare, reset, panel markers, search, zoom (buttons, wheel, pinch), crop tool, batch export with progress, webp, delete",
   );
   w.close();
 })().catch((e) => {

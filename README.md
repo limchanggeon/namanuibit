@@ -8,12 +8,12 @@ Lightroom의 라이브러리 / 현상 흐름을 참고한 로컬 사진 편집 �
 
 ## 내려받기
 
-| | 내려받기 | 메모 |
-| --- | --- | --- |
-| **macOS** | [나만의빛 최신판 `.dmg`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg) · 44MB | Apple Silicon(M1 이상) 전용 |
-| **Windows** | [설치 프로그램 `.exe`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe) · 43MB<br>[무설치 `.zip`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip) · 63MB | x64 전용 |
+|             | 내려받기                                                                                                                                                                                                                                                      | 메모                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| **macOS**   | [나만의빛 최신판 `.dmg`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg) · 44MB                                                                                                                               | Apple Silicon(M1 이상) 전용 |
+| **Windows** | [설치 프로그램 `.exe`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe) · 43MB<br>[무설치 `.zip`](https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip) · 63MB | x64 전용                    |
 
-[모든 릴리스](https://github.com/limchanggeon/namanuibit/releases) · 두 링크 모두 항상 최신판을 가리킵니다.
+[모든 릴리스](https://github.com/limchanggeon/namanuibit/releases) · [패치 노트](CHANGELOG.md) · 두 링크 모두 항상 최신판을 가리킵니다.
 
 macOS는 dmg를 열고 `나만의빛.app`을 `Applications`로 끌어다 놓습니다. Intel Mac에서는 실행되지 않습니다.
 
@@ -78,7 +78,7 @@ macOS 번들 안의 실행 파일만 `Contents/MacOS/Namanuibit`로 둡니다. `
 
 ## 기능
 
-- 여러 사진 가져오기와 드래그 앤 드롭, 라이브러리와 필름 스트립
+- 여러 사진 가져오기와 드래그 앤 드롭, 라이브러리와 필름 스트립, 여러 장 선택과 삭제
 - LibRaw/rawpy로 CR2, CR3, NEF, NRW, ARW, DNG, RAF, ORF, RW2, PEF, SRW, RAW 디코딩 (실제 지원은 카메라 모델에 따라 다름)
 - JPEG, PNG, TIFF, WebP 입력, EXIF 방향 적용과 ICC → sRGB 변환
 - 노출, 대비, 하이라이트/섀도, 흰색/검정, 색온도/색조, 생동감/채도, 부분 대비, 선명도, 비네팅, 흑백
@@ -88,11 +88,12 @@ macOS 번들 안의 실행 파일만 `Contents/MacOS/Namanuibit`로 둡니다. `
 - 선명도 반경·세부·가장자리 마스킹, 휘도·색상 노이즈 감소와 세부 보존
 - RGB 원색 보정, 섀도 틴트, 보라·초록 프린지 제거와 색상 범위
 - 보정 검색, XMP 적용 내역 (지원/비활성/관리용/미지원/잘못된 값 구분)
-- 90도 회전과 **중앙 기준** 비율 자르기 (1:1, 4:3, 3:2, 16:9)
+- 90도 회전과 자르기 — 모서리를 끌어 자유 영역을 잡거나 1:1 · 4:3 · 3:2 · 16:9 · 원본 비율로 고정
 - 6개 기본 프리셋과 XMP 가져오기 / 한 번 클릭해 적용
 - 보정 전후 비교, 실행 취소 / 다시 실행, 자동 저장, RGB 히스토그램
 - 화면 맞춤 / 확대와 드래그 패닝. 휠과 트랙패드 핀치로 커서 위치 기준 확대·축소
-- 원본 크기 또는 축소 JPEG / PNG / TIFF 출력, JPEG 품질 설정, sRGB ICC 포함
+- 원본 크기 또는 축소 JPEG / WebP / PNG / TIFF 출력, 품질 설정, sRGB ICC 포함
+- 현재 사진 · 선택한 사진 · 전체 사진 일괄 내보내기와 진행률 표시
 - 데스크톱 앱에서는 네이티브 저장 대화상자로 위치를 고르고, 저장 후 폴더에서 바로 확인
 - 창 메뉴(사진 / 보정)와 단축키, 편집이 남아 있는 보정 패널 표시
 
@@ -110,15 +111,17 @@ macOS 번들 안의 실행 파일만 `Contents/MacOS/Namanuibit`로 둡니다. `
 
 ![내보내기 대화상자](docs/screenshots/export.png)
 
+무거운 현상은 **별도 프로세스**에서 돕니다. 창을 그리는 프로세스와 같은 곳에서 돌리면 긴 작업 동안 인터프리터를 붙잡아, Windows가 창을 "응답 없음"으로 표시하고 로딩 표시조차 다시 그려지지 않습니다.
+
 ## 보관 위치
 
 `<보관 폴더>/<사진 ID>/`에 원본 사본, 미리보기, 썸네일, 보정값 JSON을 보관합니다. 원래 파일은 수정하지 않습니다.
 
-| 실행 형태 | 보관 폴더 |
-| --- | --- |
-| 소스 실행 | 프로젝트 안의 `data/` |
-| macOS 앱 | `~/Library/Application Support/나만의빛/library` |
-| Windows 앱 | `%LOCALAPPDATA%\나만의빛\library` |
+| 실행 형태  | 보관 폴더                                        |
+| ---------- | ------------------------------------------------ |
+| 소스 실행  | 프로젝트 안의 `data/`                            |
+| macOS 앱   | `~/Library/Application Support/나만의빛/library` |
+| Windows 앱 | `%LOCALAPPDATA%\나만의빛\library`                |
 
 `LIGHTLOOM_DATA` 환경 변수로 폴더를 바꿀 수 있습니다. 데스크톱 앱에서는 메뉴 **사진 → 라이브러리 폴더 열기**로 바로 열 수 있습니다. 가져온 프리셋은 창의 localStorage에 저장되며 이 저장소는 `나만의빛/webview` 아래에 유지됩니다. 실행 취소 기록은 현재 사진 편집 세션에만 유지됩니다.
 
@@ -132,7 +135,7 @@ XMP 내부의 `Look` 같은 중첩 리소스는 주 설정과 분리합니다. `
 
 **Adobe 엔진의 동일 재현은 아닙니다.** HSL은 색상 구간 보간, 커브는 선형 포인트 보간, 텍스처/부분 대비/선명도는 휘도 다중 스케일 처리, 안개 제거는 다크 채널 기반, 노이즈 감소는 가장자리 보존 가우시안 혼합을 사용합니다. AI 노이즈 제거가 아닙니다. 색온도·원색 보정·컬러 그레이딩·프린지의 XMP 값은 독자 알고리즘으로 근사 적용합니다. 프린지는 선택한 색상과 가장자리의 채도를 줄이며 기하학적 색수차 자동 보정과 다릅니다. 그레인은 고정 시드로 재현할 수 있습니다.
 
-Adobe 프로필/LUT (`Look`, `CameraProfile`, RGB Tables), 프로필 기반 자동 렌즈 보정/자동 색수차, Point Colors/Color Variance, 로컬 마스크, AI 기능은 아직 지원하지 않습니다. 활성 값은 미지원 효과로 표시합니다. 파노라마/HDR 병합, 자유 영역 크롭, 일괄 내보내기도 미구현입니다.
+Adobe 프로필/LUT (`Look`, `CameraProfile`, RGB Tables), 프로필 기반 자동 렌즈 보정/자동 색수차, Point Colors/Color Variance, 로컬 마스크, AI 기능은 아직 지원하지 않습니다. 활성 값은 미지원 효과로 표시합니다. 파노라마/HDR 병합은 미구현입니다. 자유 영역 크롭은 지원하지만 기울기 보정은 아직 없습니다.
 
 RAW는 16비트 디코딩 후 float32로 보정합니다. 미리보기는 최대 1,600px의 8비트 프록시이며 내보내기는 원본을 다시 디코딩합니다. 출력은 **8비트 RGB**입니다. 고해상도 원본은 메모리와 처리 시간이 더 필요합니다. EXIF/GPS는 출력에 복사하지 않습니다. 파일당 최대 250MB입니다.
 
@@ -149,6 +152,7 @@ uv pip install pytest httpx
 npm install --prefix /tmp/lightloom-testdeps jsdom
 NODE_PATH=/tmp/lightloom-testdeps/node_modules node tests/frontend.cjs
 ```
+
 실제 Canon 40D sRAW 샘플을 LibRaw로 디코딩해 보정된 JPEG 원본 크기로 출력하는 통합 검증도 수행했습니다.
 
 기술 자료: [rawpy Params](https://letmaik.github.io/rawpy/api/rawpy.Params.html), [Adobe Camera Raw XMP namespace](https://developer.adobe.com/xmp/docs/xmp-namespaces/crs/). 실제 RAW 검증용 샘플은 [rawpy 테스트 자료](https://github.com/letmaik/rawpy/tree/main/test)를 사용했으며 프로젝트에 포함하지 않습니다.

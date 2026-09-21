@@ -13,16 +13,14 @@ def client(tmp_path, monkeypatch):
     return TestClient(studio.app)
 
 
-def photo(client):
+def photo(client, name="test.png"):
     a = np.zeros((80, 120, 3), dtype=np.uint8)
     a[:, :, 0] = np.arange(120) * 2
     a[:, :, 1] = 100
     a[:, :, 2] = 60
     out = BytesIO()
     Image.fromarray(a).save(out, "PNG")
-    r = client.post(
-        "/api/photos", files={"file": ("test.png", out.getvalue(), "image/png")}
-    )
+    r = client.post("/api/photos", files={"file": (name, out.getvalue(), "image/png")})
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -135,7 +133,9 @@ def test_export_to_path_requires_desktop(client, tmp_path, monkeypatch):
     missing = {**body, "dest": str(tmp_path / "nope" / "saved.jpg")}
     assert client.post(f"/api/photos/{p['id']}/export", json=missing).status_code == 400
     relative = {**body, "dest": "saved.jpg"}
-    assert client.post(f"/api/photos/{p['id']}/export", json=relative).status_code == 400
+    assert (
+        client.post(f"/api/photos/{p['id']}/export", json=relative).status_code == 400
+    )
 
 
 def test_frozen_bundle_uses_per_user_library(monkeypatch, tmp_path):
@@ -148,3 +148,130 @@ def test_frozen_bundle_uses_per_user_library(monkeypatch, tmp_path):
 
     monkeypatch.setenv("LIGHTLOOM_DATA", str(tmp_path / "custom"))
     assert paths.user_data() == tmp_path / "custom"
+
+
+def wait_for_job(client, jid, timeout=120):
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        state = client.get(f"/api/export/{jid}").json()
+        if state["finished"]:
+            return state
+        time.sleep(0.05)
+    raise AssertionError("export job never finished")
+
+
+def test_delete_photo_removes_its_folder(client):
+    p = photo(client)
+    assert (studio.DATA / p["id"]).is_dir()
+    assert client.delete(f"/api/photos/{p['id']}").json()["name"] == "test.png"
+    assert not (studio.DATA / p["id"]).exists()
+    assert client.get("/api/photos").json() == []
+    assert client.delete(f"/api/photos/{p['id']}").status_code == 404
+
+
+def test_webp_export_and_rejected_formats(client):
+    p = photo(client)
+    r = client.post(
+        f"/api/photos/{p['id']}/export", json={"settings": {}, "format": "webp"}
+    )
+    assert r.status_code == 200, r.text
+    im = Image.open(BytesIO(r.content))
+    assert im.format == "WEBP" and im.size == (120, 80)
+    assert (
+        client.post(
+            f"/api/photos/{p['id']}/export", json={"settings": {}, "format": "gif"}
+        ).status_code
+        == 422
+    )
+
+
+def test_free_crop_rectangle(client):
+    p = photo(client)
+    s = {"crop_x": 0.25, "crop_y": 0.5, "crop_w": 0.5, "crop_h": 0.25}
+    r = client.post(f"/api/photos/{p['id']}/export", json={"settings": s})
+    assert r.status_code == 200, r.text
+    # The source is 120x80, so a quarter-tall half-width slice is 60x20.
+    assert Image.open(BytesIO(r.content)).size == (60, 20)
+
+    # The frame endpoint ignores the crop so the tool can show the whole photo.
+    frame = client.post(f"/api/photos/{p['id']}/frame", json=s)
+    assert Image.open(BytesIO(frame.content)).size == (120, 80)
+
+    # A rectangle running off the edge is refused rather than silently clamped.
+    off = {**s, "crop_x": 0.8, "crop_w": 0.5}
+    assert client.post(f"/api/photos/{p['id']}/preview", json=off).status_code == 422
+
+
+def test_named_ratio_still_crops_for_old_libraries(client):
+    p = photo(client)
+    r = client.post(f"/api/photos/{p['id']}/export", json={"settings": {"crop": "1:1"}})
+    assert Image.open(BytesIO(r.content)).size == (80, 80)
+
+
+def test_batch_export_writes_every_photo(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(studio, "DESKTOP", True)
+    first, second = photo(client, "하나.png"), photo(client, "둘.png")
+    folder = tmp_path / "out"
+    folder.mkdir()
+    started = client.post(
+        "/api/export",
+        json={
+            "photos": [{"id": first["id"]}, {"id": second["id"]}],
+            "format": "webp",
+            "folder": str(folder),
+        },
+    )
+    assert started.status_code == 200, started.text
+    assert started.json()["total"] == 2
+    state = wait_for_job(client, started.json()["job"])
+    assert state["failed"] == [], state["failed"]
+    assert len(state["written"]) == 2
+    written = sorted(folder.glob("*.webp"))
+    assert len(written) == 2
+    assert Image.open(written[0]).format == "WEBP"
+
+
+def test_batch_export_rejects_missing_folder_and_unknown_photos(
+    client, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(studio, "DESKTOP", True)
+    first = photo(client)
+    assert (
+        client.post(
+            "/api/export",
+            json={
+                "photos": [{"id": first["id"]}, {"id": "0" * 32}],
+                "folder": str(tmp_path),
+            },
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/export",
+            json={"photos": [{"id": first["id"]}, {"id": first["id"]}]},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/export",
+            json={"photos": [{"id": first["id"]}], "folder": str(tmp_path / "nope")},
+        ).status_code
+        == 400
+    )
+
+
+def test_single_export_job_keeps_bytes_for_browser_download(client):
+    p = photo(client)
+    started = client.post("/api/export", json={"photos": [{"id": p["id"]}]})
+    assert started.status_code == 200, started.text
+    jid = started.json()["job"]
+    state = wait_for_job(client, jid)
+    assert state["failed"] == []
+    assert "blob" not in state
+    got = client.get(f"/api/export/{jid}/file")
+    assert got.status_code == 200
+    assert Image.open(BytesIO(got.content)).format == "JPEG"

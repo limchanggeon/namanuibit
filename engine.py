@@ -352,15 +352,9 @@ def process(base, s):
     # Geometry precedes post-crop vignette and grain.
     if s.rotation:
         a = np.rot90(a, -s.rotation).copy()
-    if s.crop != "original":
-        rw, rh = map(int, s.crop.split(":"))
-        ratio = rw / rh
-        h, w = a.shape[:2]
-        nw, nh = (
-            (max(1, int(h * ratio)), h)
-            if w / h > ratio
-            else (w, max(1, int(w / ratio)))
-        )
-        x, y = (w - nw) // 2, (h - nh) // 2
-        a = a[y : y + nh, x : x + nw]
+    h, w = a.shape[:2]
+    box = s.crop_box(w, h)
+    if box:
+        x0, y0, x1, y1 = box
+        a = a[y0:y1, x0:x1]
     return Image.fromarray(np.uint8(np.round(finish(a, s) * 255)))

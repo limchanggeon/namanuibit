@@ -85,6 +85,19 @@
             <button class="primary" id="emptyImport">＋ 첫 사진 불러오기</button
             ><span class="formats">RAW · DNG · JPEG · PNG · TIFF · WEBP</span>
           </div>
+          <div id="cropOverlay" hidden>
+            <div id="cropBox">
+              <div class="crop-thirds"></div>
+              <span class="crop-handle" data-handle="nw"></span
+              ><span class="crop-handle" data-handle="n"></span
+              ><span class="crop-handle" data-handle="ne"></span
+              ><span class="crop-handle" data-handle="e"></span
+              ><span class="crop-handle" data-handle="se"></span
+              ><span class="crop-handle" data-handle="s"></span
+              ><span class="crop-handle" data-handle="sw"></span
+              ><span class="crop-handle" data-handle="w"></span>
+            </div>
+          </div>
           <span id="beforeBadge" hidden>원본</span>
           <div id="dropHint" hidden>
             <div class="drop-card">
@@ -93,8 +106,14 @@
             </div>
           </div>
           <div id="loading" hidden>
-            <span class="spinner"></span
-            ><span id="loadingText">사진을 현상하고 있습니다</span>
+            <div class="loading-card">
+              <span class="spinner"></span>
+              <span id="loadingText">사진을 현상하고 있습니다</span>
+              <div class="progress-track" id="loadingTrack" hidden>
+                <div class="progress-fill" id="loadingBar"></div>
+              </div>
+              <span class="loading-note" id="loadingNote"></span>
+            </div>
           </div>
           <div id="photoInfo" hidden></div>
         </div>
@@ -104,13 +123,18 @@
             ><button id="redo" title="다시 실행 (⇧⌘Z)">↷</button
             ><span class="separator"></span
             ><button id="rotate" title="오른쪽 90° 회전">⟳</button
-            ><select id="crop" aria-label="가운데 자르기">
+            ><button id="cropTool" title="자르기 (C)" aria-pressed="false">
+              ⛶ 자르기</button
+            ><select id="crop" aria-label="자르기 비율">
+              <option value="free">자유 비율</option>
               <option value="original">원본 비율</option>
               <option>1:1</option>
               <option>4:3</option>
               <option>3:2</option>
               <option>16:9</option>
             </select>
+            <span class="separator"></span
+            ><button id="deletePhoto" title="사진 삭제 (⌫)">🗑</button>
           </div>
           <button id="compare" title="원본과 비교 (\)" aria-pressed="false">
             ◧ 원본 비교
@@ -126,11 +150,24 @@
             ><button id="zoom" title="실제 픽셀 (⌘1)">100%</button>
           </div>
         </div>
+        <div class="crop-bar" id="cropBar" hidden>
+          <span>모서리를 끌어 영역을 정하고, 안쪽을 끌어 옮기세요.</span>
+          <div>
+            <button id="cropReset">전체 선택</button
+            ><button id="cropCancel">취소</button
+            ><button class="primary" id="cropApply">적용</button>
+          </div>
+        </div>
         <section class="filmstrip">
           <div class="filmstrip-header">
             <span id="stripTitle"
               >필름 스트립 <b id="stripCount">0장의 사진</b></span
-            ><span id="saveStatus">편집할 사진을 불러오세요</span>
+            ><span class="strip-actions"
+              ><button id="selectAll" hidden>모두 선택</button
+              ><button id="selectNone" hidden>선택 해제</button
+              ><button id="deleteSelected" hidden>선택 삭제</button
+              ><span id="saveStatus">편집할 사진을 불러오세요</span></span
+            >
           </div>
           <div id="thumbnails">
             <button class="add-photo" id="addPhoto" title="사진 불러오기 (⌘O)">
@@ -185,8 +222,15 @@
         <p>완성된 순간을 원하는 형식으로 저장하세요.</p>
       </div>
       <label
+        >내보낼 사진<select id="exportScope">
+          <option value="current">현재 사진</option>
+          <option value="selected">선택한 사진</option>
+          <option value="all">전체 사진</option>
+        </select></label
+      ><label
         >파일 형식<select id="exportFormat">
           <option value="jpeg">JPEG — 공유하기 좋은 파일</option>
+          <option value="webp">WebP — 같은 화질에 더 작은 파일</option>
           <option value="png">PNG — 무손실 이미지</option>
           <option value="tiff">TIFF — 8비트 RGB 이미지</option>
         </select></label
@@ -210,8 +254,14 @@
         sRGB 색상 프로필 포함 · 현재 보정 및 자르기 적용
       </p>
       <div class="export-progress" id="exportProgress" hidden>
-        <span class="spinner"></span>
-        <span id="exportProgressText">원본 크기로 처리 중…</span>
+        <div class="progress-row">
+          <span class="spinner"></span>
+          <span id="exportProgressText">원본 크기로 처리 중…</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="exportBar"></div>
+        </div>
+        <p class="control-help" id="exportElapsed"></p>
       </div>
       <div class="dialog-actions">
         <button id="cancelExport">취소</button
@@ -225,6 +275,14 @@
       <div id="presetReportDetails"></div>
       <div class="dialog-actions">
         <button id="closePresetReport" class="primary">닫기</button>
+      </div>
+    </dialog>
+    <dialog id="confirmDialog">
+      <h2 id="confirmTitle"></h2>
+      <p id="confirmBody" class="confirm-body"></p>
+      <div class="dialog-actions">
+        <button id="confirmCancel">취소</button
+        ><button class="primary danger" id="confirmOk">삭제</button>
       </div>
     </dialog>
     <dialog id="shortcuts">

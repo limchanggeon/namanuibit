@@ -1,17 +1,19 @@
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from io import BytesIO
-import json, uuid, os, threading
+import json, uuid, os, shutil, threading, time
 import numpy as np
-import rawpy
-from PIL import Image, ImageOps, ImageCms
-from adjustments import AdvancedSettings, ui_config
-from engine import process
+import rawpy  # noqa: F401  -- re-exported so tests can stub the decoder
+from PIL import Image
+from adjustments import ui_config
 from xmp import parse as parse_xmp
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.responses import Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import paths
+import render_worker
+from render_worker import RASTER, RAW, decode, encode
+from settings import FORMATS, Settings
 
 ROOT = paths.resources()
 DATA = paths.user_data()
@@ -19,49 +21,36 @@ DATA.mkdir(exist_ok=True, parents=True)
 DESKTOP = os.environ.get("LIGHTLOOM_DESKTOP") == "1"
 LOCK = threading.RLock()
 RENDER_LOCK = threading.Lock()
+JOBS = {}
+JOB_LOCK = threading.Lock()
+POOL = None
+POOL_LOCK = threading.Lock()
 app = FastAPI(title="나만의빛")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
-RAW = {
-    ".cr2",
-    ".cr3",
-    ".nef",
-    ".nrw",
-    ".arw",
-    ".dng",
-    ".raf",
-    ".orf",
-    ".rw2",
-    ".pef",
-    ".srw",
-    ".raw",
-}
-
-
-class Settings(AdvancedSettings):
-    exposure: float = Field(0, ge=-5, le=5)
-    contrast: float = Field(0, ge=-100, le=100)
-    highlights: float = Field(0, ge=-100, le=100)
-    shadows: float = Field(0, ge=-100, le=100)
-    whites: float = Field(0, ge=-100, le=100)
-    blacks: float = Field(0, ge=-100, le=100)
-    temperature: float = Field(0, ge=-100, le=100)
-    tint: float = Field(0, ge=-100, le=100)
-    vibrance: float = Field(0, ge=-100, le=100)
-    saturation: float = Field(0, ge=-100, le=100)
-    clarity: float = Field(0, ge=-100, le=100)
-    sharpness: float = Field(0, ge=0, le=150)
-    vignette: float = Field(0, ge=-100, le=100)
-    rotation: int = Field(0, ge=0, le=3)
-    crop: str = Field("original", pattern="^(original|1:1|4:3|3:2|16:9)$")
-    monochrome: bool = False
+FORMAT_PATTERN = "^(" + "|".join(FORMATS) + ")$"
 
 
 class Export(BaseModel):
     settings: Settings
-    format: str = Field("jpeg", pattern="^(jpeg|png|tiff)$")
+    format: str = Field("jpeg", pattern=FORMAT_PATTERN)
     quality: int = Field(95, ge=10, le=100)
     long_edge: int = Field(0, ge=0, le=16000)
     dest: str | None = None
+
+
+class BatchItem(BaseModel):
+    id: str
+    settings: Settings | None = None
+
+
+class Batch(BaseModel):
+    photos: list[BatchItem] = Field(min_length=1, max_length=500)
+    format: str = Field("jpeg", pattern=FORMAT_PATTERN)
+    quality: int = Field(95, ge=10, le=100)
+    long_edge: int = Field(0, ge=0, le=16000)
+    # A single photo may name its exact file; several need a folder to fill.
+    dest: str | None = None
+    folder: str | None = None
 
 
 def record(pid):
@@ -77,36 +66,104 @@ def save(pid, meta):
         tmp.replace(DATA / pid / "meta.json")
 
 
-def decode(path):
-    if path.suffix.lower() in RAW:
-        with rawpy.imread(str(path)) as raw:
-            return (
-                raw.postprocess(
-                    use_camera_wb=True, no_auto_bright=True, output_bps=16
-                ).astype(np.float32)
-                / 65535
-            )
-    with Image.open(path) as source:
-        im = ImageOps.exif_transpose(source)
-        if source.info.get("icc_profile"):
-            im = ImageCms.profileToProfile(
-                im,
-                ImageCms.ImageCmsProfile(BytesIO(source.info["icc_profile"])),
-                ImageCms.createProfile("sRGB"),
-                outputMode="RGB",
-            )
-        return np.asarray(im.convert("RGB"), dtype=np.float32) / 255
+def pool():
+    """One worker process, started the first time a full-size render is asked for.
+
+    Spawning costs a second or two and most sessions never export, so it is not
+    worth paying at launch.
+    """
+    global POOL
+    with POOL_LOCK:
+        if POOL is None:
+            POOL = ProcessPoolExecutor(max_workers=1)
+        return POOL
+
+
+def develop(source, s, fmt="jpeg", quality=95, long_edge=0, dest=None):
+    """Full-size render, off in the worker process so the window keeps painting."""
+    args = (str(source), s.model_dump(), fmt, quality, long_edge, dest)
+    try:
+        return pool().submit(render_worker.develop, *args).result()
+    except (ValueError, OSError) as error:
+        raise HTTPException(400, str(error))
+    except Exception as error:
+        # A crashed worker leaves the pool unusable; drop it so the next export
+        # starts a fresh one instead of failing forever.
+        global POOL
+        with POOL_LOCK:
+            if POOL is not None:
+                POOL.shutdown(wait=False, cancel_futures=True)
+                POOL = None
+        raise HTTPException(500, f"사진을 현상하지 못했습니다: {error}")
 
 
 def render(base, s):
-    return process(base, s)
+    return render_worker.render(base, s)
 
 
-def encode(im, fmt="jpeg", quality=92):
-    out = BytesIO()
-    icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
-    im.save(out, format=fmt.upper(), quality=quality, icc_profile=icc)
-    return out.getvalue()
+def job_state(jid):
+    with JOB_LOCK:
+        state = JOBS.get(jid)
+        return dict(state) if state else None
+
+
+def run_batch(jid, req):
+    """Export each photo in turn, publishing progress the page can poll."""
+    written, failed = [], []
+    for index, item in enumerate(req.photos):
+        with JOB_LOCK:
+            if JOBS[jid]["cancelled"]:
+                break
+            JOBS[jid]["done"] = index
+        try:
+            meta = json.loads((DATA / item.id / "meta.json").read_text())
+        except (OSError, ValueError):
+            failed.append({"name": item.id, "error": "사진을 찾을 수 없습니다."})
+            continue
+        with JOB_LOCK:
+            JOBS[jid]["current"] = meta["name"]
+        s = item.settings or Settings(**meta["settings"])
+        dest = req.dest
+        if dest is None and req.folder:
+            stem = Path(meta["name"]).stem
+            dest = str(Path(req.folder) / f"{stem}-나만의빛{suffix_for(req.format)}")
+        try:
+            result = develop(
+                DATA / item.id / meta["source"],
+                s,
+                req.format,
+                req.quality,
+                req.long_edge,
+                dest,
+            )
+        except HTTPException as error:
+            failed.append({"name": meta["name"], "error": str(error.detail)})
+            continue
+        if isinstance(result, bytes):
+            with JOB_LOCK:
+                JOBS[jid]["blob"] = result
+            written.append(meta["name"])
+        else:
+            written.append(result)
+    with JOB_LOCK:
+        JOBS[jid].update(
+            done=len(written) + len(failed),
+            current=None,
+            written=written,
+            failed=failed,
+            finished=True,
+        )
+
+
+def suffix_for(fmt):
+    return {"jpeg": ".jpg", "tiff": ".tif"}.get(fmt, "." + fmt)
+
+
+def writable_dir(path, what):
+    folder = Path(path).expanduser()
+    if not folder.is_absolute() or not folder.is_dir():
+        raise HTTPException(400, f"{what}를 찾을 수 없습니다.")
+    return folder
 
 
 @app.get("/")
@@ -125,7 +182,7 @@ def photos():
 @app.post("/api/photos")
 def upload(file: UploadFile):
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in RAW | {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}:
+    if suffix not in RAW | RASTER:
         raise HTTPException(400, "지원하지 않는 이미지 형식입니다.")
     pid = uuid.uuid4().hex
     folder = DATA / pid
@@ -168,6 +225,14 @@ def upload(file: UploadFile):
         raise HTTPException(400, f"이미지를 열 수 없습니다: {e}")
 
 
+@app.delete("/api/photos/{pid}")
+def remove(pid: str):
+    meta = record(pid)
+    with LOCK:
+        shutil.rmtree(DATA / pid, ignore_errors=True)
+    return {"id": pid, "name": meta["name"]}
+
+
 @app.get("/api/photos/{pid}/thumb")
 def thumbnail(pid: str):
     record(pid)
@@ -182,6 +247,18 @@ def preview(pid: str, s: Settings):
     return Response(encode(render(a, s)), media_type="image/jpeg")
 
 
+@app.post("/api/photos/{pid}/frame")
+def frame(pid: str, s: Settings):
+    """The proxy with every adjustment but the crop, for the crop tool to sit on."""
+    record(pid)
+    with Image.open(DATA / pid / "preview.png") as im:
+        a = np.asarray(im, dtype=np.float32) / 255
+    uncropped = s.model_copy(
+        update={"crop_x": 0, "crop_y": 0, "crop_w": 1, "crop_h": 1, "crop": "original"}
+    )
+    return Response(encode(render(a, uncropped)), media_type="image/jpeg")
+
+
 @app.put("/api/photos/{pid}/settings")
 def settings(pid: str, s: Settings):
     with LOCK:
@@ -194,25 +271,95 @@ def settings(pid: str, s: Settings):
 @app.post("/api/photos/{pid}/export")
 def export(pid: str, req: Export):
     meta = record(pid)
+    dest = None
+    if req.dest is not None:
+        # Desktop builds pick the destination with a native save panel, so the
+        # bytes go straight to disk instead of through a browser download.
+        if not DESKTOP:
+            raise HTTPException(400, "저장 위치 지정은 데스크톱 앱에서만 지원합니다.")
+        target = Path(req.dest).expanduser()
+        if not target.is_absolute():
+            raise HTTPException(400, "저장할 폴더를 찾을 수 없습니다.")
+        writable_dir(target.parent, "저장할 폴더")
+        dest = str(target)
     with RENDER_LOCK:
-        im = render(decode(DATA / pid / meta["source"]), req.settings)
-        if req.long_edge:
-            im.thumbnail((req.long_edge, req.long_edge), Image.Resampling.LANCZOS)
-        data = encode(im, req.format, req.quality)
-    if req.dest is None:
-        return Response(data, media_type="image/" + req.format)
-    # Desktop builds pick the destination with a native save panel, so the
-    # bytes go straight to disk instead of through a browser download.
-    if not DESKTOP:
+        result = develop(
+            DATA / pid / meta["source"],
+            req.settings,
+            req.format,
+            req.quality,
+            req.long_edge,
+            dest,
+        )
+    if dest is None:
+        return Response(result, media_type="image/" + req.format)
+    return {"path": result, "bytes": Path(result).stat().st_size}
+
+
+@app.post("/api/export")
+def export_batch(req: Batch):
+    """Start a background export and hand back a job to poll for progress."""
+    if req.dest is not None and len(req.photos) != 1:
+        raise HTTPException(400, "파일 이름 지정은 사진 한 장일 때만 가능합니다.")
+    if req.folder is None and req.dest is None and len(req.photos) != 1:
+        raise HTTPException(400, "여러 장을 내보내려면 저장할 폴더가 필요합니다.")
+    if (req.dest or req.folder) and not DESKTOP:
         raise HTTPException(400, "저장 위치 지정은 데스크톱 앱에서만 지원합니다.")
-    target = Path(req.dest).expanduser()
-    if not target.is_absolute() or not target.parent.is_dir():
-        raise HTTPException(400, "저장할 폴더를 찾을 수 없습니다.")
-    try:
-        target.write_bytes(data)
-    except OSError as error:
-        raise HTTPException(400, f"파일을 저장하지 못했습니다: {error}")
-    return {"path": str(target), "bytes": len(data)}
+    if req.folder:
+        writable_dir(req.folder, "저장할 폴더")
+    if req.dest:
+        writable_dir(Path(req.dest).expanduser().parent, "저장할 폴더")
+    for item in req.photos:
+        record(item.id)
+    jid = uuid.uuid4().hex
+    with JOB_LOCK:
+        JOBS[jid] = dict(
+            id=jid,
+            total=len(req.photos),
+            done=0,
+            current=None,
+            written=[],
+            failed=[],
+            finished=False,
+            cancelled=False,
+            blob=None,
+            started=time.time(),
+            format=req.format,
+        )
+    threading.Thread(
+        target=run_batch, args=(jid, req), name=f"export-{jid[:8]}", daemon=True
+    ).start()
+    return {"job": jid, "total": len(req.photos)}
+
+
+@app.get("/api/export/{jid}")
+def export_status(jid: str):
+    state = job_state(jid)
+    if not state:
+        raise HTTPException(404, "내보내기 작업을 찾을 수 없습니다.")
+    state.pop("blob", None)
+    state["elapsed"] = round(time.time() - state.pop("started"), 1)
+    return state
+
+
+@app.post("/api/export/{jid}/cancel")
+def export_cancel(jid: str):
+    with JOB_LOCK:
+        if jid not in JOBS:
+            raise HTTPException(404, "내보내기 작업을 찾을 수 없습니다.")
+        JOBS[jid]["cancelled"] = True
+    return {"cancelled": True}
+
+
+@app.get("/api/export/{jid}/file")
+def export_file(jid: str):
+    """Browser mode: collect the single rendered image once the job is done."""
+    state = job_state(jid)
+    if not state:
+        raise HTTPException(404, "내보내기 작업을 찾을 수 없습니다.")
+    if not state["finished"] or not state["blob"]:
+        raise HTTPException(409, "아직 내보내기가 끝나지 않았습니다.")
+    return Response(state["blob"], media_type="image/" + state["format"])
 
 
 @app.get("/advanced-config.js")

@@ -64,6 +64,40 @@ try {
     $size = (Get-Item $out).Length
     if ($size -lt 1000) { throw "export produced only $size bytes" }
     Write-Host "exported $size bytes - bundle works"
+
+    # The export above already ran in a child process, which is the part most
+    # likely to break in a frozen build; a batch run also covers the job queue,
+    # the WebP encoder and a free crop rectangle.
+    $folder = Join-Path $env:RUNNER_TEMP "batch"
+    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    $batch = @{
+        photos  = @(@{
+            id       = $imported.id
+            settings = @{ crop_x = 0.25; crop_y = 0.25; crop_w = 0.5; crop_h = 0.5 }
+        })
+        format  = "webp"
+        quality = 90
+        folder  = $folder
+    } | ConvertTo-Json -Depth 5
+    $job = Invoke-RestMethod "http://127.0.0.1:8791/api/export" `
+        -Method Post -ContentType "application/json" -Body $batch
+    $state = $null
+    foreach ($attempt in 1..60) {
+        Start-Sleep -Seconds 1
+        $state = Invoke-RestMethod "http://127.0.0.1:8791/api/export/$($job.job)"
+        if ($state.finished) { break }
+    }
+    if (-not $state.finished) { throw "batch export never finished" }
+    if ($state.failed.Count -gt 0) { throw "batch export failed: $($state.failed | ConvertTo-Json -Compress)" }
+    $webp = Get-ChildItem $folder -Filter *.webp
+    if ($webp.Count -ne 1) { throw "expected one webp, found $($webp.Count)" }
+    Write-Host "batch export wrote $($webp[0].Name) ($($webp[0].Length) bytes)"
+
+    # And the photo can be removed again.
+    Invoke-RestMethod "http://127.0.0.1:8791/api/photos/$($imported.id)" -Method Delete | Out-Null
+    $left = Invoke-RestMethod "http://127.0.0.1:8791/api/photos"
+    if ($left.Count -ne 0) { throw "delete left $($left.Count) photos behind" }
+    Write-Host "delete works"
 } finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force }
 }

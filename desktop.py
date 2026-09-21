@@ -1,6 +1,7 @@
 """Native desktop shell: runs the render server in-process behind a webview window."""
 
 from pathlib import Path
+import multiprocessing
 import os
 import socket
 import subprocess
@@ -113,6 +114,20 @@ class Bridge:
             chosen = chosen.with_suffix(suffix)
         return str(chosen)
 
+    def folder_dialog(self):
+        """Pick a destination folder for a batch export."""
+        import webview
+
+        result = self.window.create_file_dialog(
+            webview.FOLDER_DIALOG,
+            directory=str(Path.home() / "Pictures")
+            if (Path.home() / "Pictures").is_dir()
+            else str(Path.home()),
+        )
+        if not result:
+            return None
+        return str(result if isinstance(result, str) else result[0])
+
     def reveal(self, path: str):
         reveal(Path(path))
 
@@ -219,4 +234,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Renders happen in a child process; a frozen build re-launches itself to
+    # start one, and without this it would open a second window instead.
+    multiprocessing.freeze_support()
     sys.exit(main())

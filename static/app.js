@@ -16,6 +16,10 @@ const defaults = {
   vignette: 0,
   rotation: 0,
   crop: "original",
+  crop_x: 0,
+  crop_y: 0,
+  crop_w: 1,
+  crop_h: 1,
   monochrome: false,
 };
 let photos = [],
@@ -29,6 +33,8 @@ let photos = [],
   timer,
   toastTimer,
   saveChain = Promise.resolve();
+let selected = new Set();
+let lastClicked = null;
 let custom = [];
 try {
   custom = JSON.parse(localStorage.getItem("lightloom-presets") || "[]");
@@ -175,9 +181,18 @@ const json = (method, body) => ({
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
 });
-function busy(on, text = "사진을 현상하고 있습니다") {
+function busy(
+  on,
+  text = "사진을 현상하고 있습니다",
+  progress = null,
+  note = "",
+) {
   $("loading").hidden = !on;
   $("loadingText").textContent = text;
+  $("loadingNote").textContent = note;
+  $("loadingTrack").hidden = progress === null;
+  if (progress !== null)
+    $("loadingBar").style.width = Math.round(progress * 100) + "%";
   for (const id of [
     "importTop",
     "emptyImport",
@@ -186,6 +201,22 @@ function busy(on, text = "사진을 현상하고 있습니다") {
     "xmpButton",
   ])
     $(id).disabled = on;
+}
+// A yes/no the page can await, so deletions always ask first.
+function confirmAction(title, body, label = "삭제") {
+  return new Promise((resolve) => {
+    $("confirmTitle").textContent = title;
+    $("confirmBody").textContent = body;
+    $("confirmOk").textContent = label;
+    const finish = (answer) => {
+      $("confirmDialog").close();
+      $("confirmOk").onclick = $("confirmCancel").onclick = null;
+      resolve(answer);
+    };
+    $("confirmOk").onclick = () => finish(true);
+    $("confirmCancel").onclick = () => finish(false);
+    $("confirmDialog").showModal();
+  });
 }
 for (const [name, rows] of groups) {
   const details = document.createElement("details");
@@ -262,7 +293,7 @@ function syncControls() {
         ];
     }
   }
-  $("crop").value = settings.crop;
+  if (!cropping) $("crop").value = settings.crop;
   $("mono").textContent = settings.monochrome ? "흑백 · sRGB" : "컬러 · sRGB";
   $("mono").setAttribute("aria-pressed", String(settings.monochrome));
   $("compare").setAttribute("aria-pressed", String(before));
@@ -277,14 +308,16 @@ function syncControls() {
     "mono",
     "reset",
     "compare",
-    "exportTop",
     "zoom",
     "fit",
     "zoomIn",
     "zoomOut",
     "infoButton",
+    "cropTool",
+    "deletePhoto",
   ])
     $(id).disabled = !current;
+  $("exportTop").disabled = !photos.length;
   markTouchedPanels();
 }
 function sameValue(a, b) {
@@ -346,7 +379,7 @@ async function updatePreview() {
     pid = current.id;
   try {
     const res = await api(
-      `/api/photos/${pid}/preview`,
+      `/api/photos/${pid}/${cropping ? "frame" : "preview"}`,
       json("POST", before ? defaults : settings),
     );
     const blob = await res.blob();
@@ -364,6 +397,7 @@ async function updatePreview() {
       $("preview").hidden = false;
       $("beforeBadge").hidden = !before;
       applyZoom();
+      layoutCropBox();
       histogram(img);
     };
     img.src = next;
@@ -445,9 +479,35 @@ function presetButtons() {
     });
   }
 }
+function togglePick(id) {
+  selected.has(id) ? selected.delete(id) : selected.add(id);
+  lastClicked = id;
+  renderStrip();
+}
+function pickRange(id) {
+  const from = photos.findIndex((p) => p.id === (lastClicked ?? id));
+  const to = photos.findIndex((p) => p.id === id);
+  for (const p of photos.slice(Math.min(from, to), Math.max(from, to) + 1))
+    selected.add(p.id);
+  renderStrip();
+}
 function renderStrip() {
+  selected = new Set(
+    [...selected].filter((id) => photos.some((p) => p.id === id)),
+  );
   $("photoCount").textContent = photos.length;
-  $("stripCount").textContent = photos.length + "장의 사진";
+  $("stripCount").textContent =
+    selected.size > 1
+      ? `${photos.length}장 중 ${selected.size}장 선택`
+      : photos.length + "장의 사진";
+  const grid = document
+    .querySelector(".workspace")
+    .classList.contains("grid-mode");
+  $("selectAll").hidden = !grid || !photos.length;
+  $("selectNone").hidden = !grid || selected.size < 2;
+  $("deleteSelected").hidden = !grid || selected.size < 2;
+  $("selectAll").textContent = `모두 선택 (${photos.length})`;
+  $("deleteSelected").textContent = `선택 삭제 (${selected.size})`;
   document.querySelectorAll(".thumb").forEach((el) => el.remove());
   for (const p of photos) {
     const b = document.createElement("button");
@@ -461,7 +521,20 @@ function renderStrip() {
     const name = document.createElement("span");
     name.textContent = p.name;
     b.append(img, name);
-    b.onclick = () => {
+    b.classList.toggle("picked", selected.has(p.id));
+    b.onclick = (e) => {
+      const grid = document
+        .querySelector(".workspace")
+        .classList.contains("grid-mode");
+      if (grid && (e.metaKey || e.ctrlKey)) return togglePick(p.id);
+      if (grid && e.shiftKey) return pickRange(p.id);
+      selected = new Set([p.id]);
+      lastClicked = p.id;
+      select(p);
+      if (!grid) setView(false);
+      else renderStrip();
+    };
+    b.ondblclick = () => {
       select(p);
       setView(false);
     };
@@ -493,6 +566,8 @@ function select(photo) {
   $("infoButton").setAttribute("aria-pressed", "false");
   document.title = `${photo.name} — 나만의빛`;
   zoomMode = "fit";
+  if (!selected.has(photo.id) || selected.size <= 1)
+    selected = new Set([photo.id]);
   syncControls();
   applyZoom();
   renderStrip();
@@ -504,6 +579,69 @@ function step(offset) {
   const next = photos[(index + offset + photos.length) % photos.length];
   if (next && next.id !== current?.id) select(next);
 }
+async function removePhotos(ids, prompt) {
+  if (!ids.length) return;
+  if (!(await confirmAction("사진을 삭제할까요?", prompt))) return;
+  busy(true, "사진을 삭제하고 있습니다");
+  const gone = [];
+  try {
+    for (const id of ids) {
+      try {
+        await api(`/api/photos/${id}`, { method: "DELETE" });
+        gone.push(id);
+      } catch (e) {
+        toast(e.message);
+      }
+    }
+  } finally {
+    busy(false);
+  }
+  if (!gone.length) return;
+  const removing = new Set(gone);
+  const index = photos.findIndex((p) => p.id === current?.id);
+  photos = photos.filter((p) => !removing.has(p.id));
+  for (const id of gone) selected.delete(id);
+  if (current && removing.has(current.id)) {
+    const next = photos[Math.min(index, photos.length - 1)];
+    if (next) select(next);
+    else clearCurrent();
+  }
+  renderStrip();
+  toast(`${gone.length}장을 삭제했습니다. 원본 파일은 그대로 있습니다.`);
+}
+function clearCurrent() {
+  current = null;
+  settings = { ...defaults };
+  history = [];
+  future = [];
+  if (cropping) leaveCrop();
+  $("preview").hidden = true;
+  $("empty").hidden = false;
+  $("photoInfo").hidden = true;
+  $("currentName").textContent = "새로운 작업";
+  $("fileType").textContent = "STUDIO";
+  $("dimensions").textContent = "원본을 보존하는 비파괴 편집";
+  $("saveStatus").textContent = "편집할 사진을 불러오세요";
+  document.title = "나만의빛 — 로컬 사진 스튜디오";
+  syncControls();
+}
+$("deletePhoto").onclick = () =>
+  current &&
+  removePhotos([current.id], `${current.name}을(를) 라이브러리에서 지웁니다.`);
+$("deleteSelected").onclick = () =>
+  removePhotos(
+    [...selected],
+    `선택한 ${selected.size}장을 라이브러리에서 지웁니다.`,
+  );
+$("selectAll").onclick = () => {
+  selected = new Set(photos.map((p) => p.id));
+  renderStrip();
+};
+$("selectNone").onclick = () => {
+  selected = new Set(current ? [current.id] : []);
+  renderStrip();
+};
+
 async function importPhotos(files) {
   const list = [...files];
   if (!list.length) return;
@@ -609,15 +747,192 @@ $("reset").onclick = () => {
 };
 $("rotate").onclick = () => {
   if (!current) return;
+  if (cropping) {
+    settings.rotation = (settings.rotation + 1) % 4;
+    cropRect = { x: 0, y: 0, w: 1, h: 1 };
+    updatePreview().then(layoutCropBox);
+    return;
+  }
   checkpoint();
   settings.rotation = (settings.rotation + 1) % 4;
   changed();
 };
-$("crop").onchange = (e) => {
+// --- crop ---------------------------------------------------------------------
+// The rectangle is stored as fractions of the rotated frame, so it survives
+// rotation, zoom and window resizes.
+let cropping = false;
+let cropRect = { x: 0, y: 0, w: 1, h: 1 };
+let cropBefore = null;
+let cropDrag = null;
+
+function frameSize() {
+  if (!current) return { w: 1, h: 1 };
+  const turned = settings.rotation % 2 === 1;
+  return turned
+    ? { w: current.height, h: current.width }
+    : { w: current.width, h: current.height };
+}
+// Fraction-space width per unit of height for a pixel aspect ratio.
+function lockedRatio() {
+  const name = $("crop").value;
+  if (name === "free" || name === "custom") return null;
+  // Fraction space is already frame-relative, so the frame's own ratio is 1.
+  if (name === "original") return 1;
+  const frame = frameSize();
+  const [a, b] = name.split(":").map(Number);
+  return (a / b) * (frame.h / frame.w);
+}
+function centredRect(name) {
+  if (name === "free" || name === "custom") return { ...cropRect };
+  const k = name === "original" ? 1 : lockedRatio();
+  const w = Math.min(1, k),
+    h = Math.min(1, 1 / k);
+  return { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
+}
+function rectFromSettings() {
+  return {
+    x: settings.crop_x,
+    y: settings.crop_y,
+    w: settings.crop_w,
+    h: settings.crop_h,
+  };
+}
+function applyRect(rect) {
+  settings.crop_x = Math.max(0, Math.min(1, rect.x));
+  settings.crop_y = Math.max(0, Math.min(1, rect.y));
+  settings.crop_w = Math.min(1 - settings.crop_x, rect.w);
+  settings.crop_h = Math.min(1 - settings.crop_y, rect.h);
+}
+function layoutCropBox() {
+  if (!cropping) return;
+  const img = $("preview").getBoundingClientRect(),
+    stage = $("dropZone").getBoundingClientRect(),
+    box = $("cropBox");
+  box.style.left = img.left - stage.left + cropRect.x * img.width + "px";
+  box.style.top = img.top - stage.top + cropRect.y * img.height + "px";
+  box.style.width = cropRect.w * img.width + "px";
+  box.style.height = cropRect.h * img.height + "px";
+}
+async function enterCrop() {
+  if (!current || cropping) return;
+  cropping = true;
+  cropBefore = { ...settings };
+  cropRect = rectFromSettings();
+  setZoom("fit");
+  $("cropTool").classList.add("active");
+  $("cropTool").setAttribute("aria-pressed", "true");
+  $("cropBar").hidden = false;
+  $("cropOverlay").hidden = false;
+  document.body.classList.add("cropping");
+  await updatePreview();
+  layoutCropBox();
+}
+function leaveCrop() {
+  cropping = false;
+  cropDrag = null;
+  $("cropTool").classList.remove("active");
+  $("cropTool").setAttribute("aria-pressed", "false");
+  $("cropBar").hidden = true;
+  $("cropOverlay").hidden = true;
+  document.body.classList.remove("cropping");
+}
+$("cropTool").onclick = () => (cropping ? $("cropApply").click() : enterCrop());
+$("cropApply").onclick = () => {
+  if (!cropping) return;
+  const previous = cropBefore;
+  leaveCrop();
+  settings = { ...previous };
   checkpoint();
-  settings.crop = e.target.value;
+  applyRect(cropRect);
+  if ($("crop").value === "free" && !isFullFrame(cropRect))
+    settings.crop = "free";
   changed();
 };
+$("cropCancel").onclick = () => {
+  if (!cropping) return;
+  const previous = cropBefore;
+  leaveCrop();
+  settings = { ...previous };
+  syncControls();
+  updatePreview();
+};
+$("cropReset").onclick = () => {
+  if (!cropping) return;
+  $("crop").value = "free";
+  cropRect = { x: 0, y: 0, w: 1, h: 1 };
+  layoutCropBox();
+};
+function isFullFrame(r) {
+  return r.x === 0 && r.y === 0 && r.w === 1 && r.h === 1;
+}
+$("crop").onchange = (e) => {
+  const name = e.target.value;
+  if (cropping) {
+    if (name !== "free") cropRect = centredRect(name);
+    layoutCropBox();
+    return;
+  }
+  checkpoint();
+  settings.crop = name;
+  const rect = name === "free" ? rectFromSettings() : centredRect(name);
+  applyRect(rect);
+  changed();
+};
+
+// Dragging: a handle resizes from its own edge, the inside moves the whole box.
+$("cropOverlay").addEventListener("pointerdown", (e) => {
+  if (!cropping) return;
+  const handle = e.target.closest(".crop-handle");
+  const inside = e.target.closest("#cropBox");
+  if (!handle && !inside) return;
+  e.preventDefault();
+  const img = $("preview").getBoundingClientRect();
+  cropDrag = {
+    handle: handle ? handle.dataset.handle : "move",
+    x: e.clientX,
+    y: e.clientY,
+    start: { ...cropRect },
+    img,
+  };
+  $("cropOverlay").setPointerCapture(e.pointerId);
+});
+$("cropOverlay").addEventListener("pointermove", (e) => {
+  if (!cropDrag) return;
+  const { handle, start, img } = cropDrag;
+  const dx = (e.clientX - cropDrag.x) / img.width;
+  const dy = (e.clientY - cropDrag.y) / img.height;
+  const min = 0.05;
+  let { x, y, w, h } = start;
+  if (handle === "move") {
+    x = Math.max(0, Math.min(1 - w, x + dx));
+    y = Math.max(0, Math.min(1 - h, y + dy));
+  } else {
+    if (handle.includes("w")) {
+      const nx = Math.max(0, Math.min(x + w - min, x + dx));
+      w += x - nx;
+      x = nx;
+    }
+    if (handle.includes("e")) w = Math.max(min, Math.min(1 - x, w + dx));
+    if (handle.includes("n")) {
+      const ny = Math.max(0, Math.min(y + h - min, y + dy));
+      h += y - ny;
+      y = ny;
+    }
+    if (handle.includes("s")) h = Math.max(min, Math.min(1 - y, h + dy));
+    const k = lockedRatio();
+    if (k && $("crop").value !== "free") {
+      // Keep the locked ratio by giving up whichever side has room.
+      if (handle === "n" || handle === "s") w = Math.min(1 - x, k * h);
+      else h = Math.min(1 - y, w / k);
+      if (handle.includes("w")) x = Math.min(x, start.x + start.w - w);
+      if (handle.includes("n")) y = Math.min(y, start.y + start.h - h);
+    }
+  }
+  cropRect = { x, y, w, h };
+  layoutCropBox();
+});
+for (const type of ["pointerup", "pointercancel"])
+  $("cropOverlay").addEventListener(type, () => (cropDrag = null));
 $("mono").onclick = () => {
   if (!current) return;
   checkpoint();
@@ -767,7 +1082,10 @@ $("zoomOut").onclick = () => stepZoom(-1);
 let resizeTimer;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => applyZoom(), 120);
+  resizeTimer = setTimeout(() => {
+    applyZoom();
+    layoutCropBox();
+  }, 120);
 });
 // Wheel and two-finger scroll zoom the photo, the way Lightroom's develop view
 // does; panning is a drag. A trackpad pinch arrives either as gesture events
@@ -845,77 +1163,160 @@ function setView(library) {
   $("stripTitle").firstChild.textContent = library
     ? "라이브러리 "
     : "필름 스트립 ";
+  if (library && cropping) $("cropCancel").click();
+  renderStrip();
   if (!library) applyZoom();
 }
 $("libraryTab").onclick = () => setView(true);
 $("allPhotos").onclick = () => setView(true);
 $("editTab").onclick = () => setView(false);
 $("exportTop").onclick = () => {
-  if (current) $("exportDialog").showModal();
+  if (!photos.length) return toast("내보낼 사진이 없습니다.");
+  $("exportScope").value = current ? "current" : "all";
+  syncExportScope();
+  $("exportDialog").showModal();
 };
 $("cancelExport").onclick = () => $("exportDialog").close();
 $("quality").oninput = (e) => ($("qualityValue").textContent = e.target.value);
 $("exportFormat").onchange = (e) =>
   ($("qualityLabel").hidden = e.target.value !== "jpeg");
+function exportSuffix(format) {
+  return format === "jpeg" ? ".jpg" : format === "tiff" ? ".tif" : "." + format;
+}
 function exportFilename(photo, format) {
   return (
-    photo.name.replace(/\.[^.]+$/, "") +
-    "-나만의빛." +
-    (format === "jpeg" ? "jpg" : format === "tiff" ? "tif" : format)
+    photo.name.replace(/\.[^.]+$/, "") + "-나만의빛" + exportSuffix(format)
   );
 }
+function exportTargets() {
+  const scope = $("exportScope").value;
+  if (scope === "all") return photos;
+  if (scope === "selected") return photos.filter((p) => selected.has(p.id));
+  return current ? [current] : [];
+}
+function syncExportScope() {
+  const picked = photos.filter((p) => selected.has(p.id)).length;
+  $("exportScope").options[1].textContent = `선택한 사진 (${picked}장)`;
+  $("exportScope").options[1].disabled = picked === 0;
+  $("exportScope").options[2].textContent = `전체 사진 (${photos.length}장)`;
+  $("exportScope").options[2].disabled = photos.length === 0;
+  if (!current && $("exportScope").value === "current")
+    $("exportScope").value = photos.length ? "all" : "current";
+  const count = exportTargets().length;
+  $("exportNote").textContent =
+    count > 1
+      ? `${count}장을 폴더에 저장합니다 · sRGB 색상 프로필 포함 · 각 사진의 저장된 보정값 적용`
+      : "sRGB 색상 프로필 포함 · 현재 보정 및 자르기 적용";
+  $("download").disabled = count === 0;
+}
+$("exportScope").onchange = syncExportScope;
+
+async function pollExport(job, total) {
+  // The render runs in another process, so this stays responsive while it works.
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 350));
+    const state = await (await api(`/api/export/${job}`)).json();
+    const done = Math.min(state.done, total);
+    $("exportBar").style.width = Math.round((done / total) * 100) + "%";
+    $("exportProgressText").textContent =
+      total > 1
+        ? `${done} / ${total}장 · ${state.current ?? "마무리 중"}`
+        : state.current
+          ? `${state.current} 현상 중…`
+          : "마무리 중…";
+    $("exportElapsed").textContent = `${state.elapsed.toFixed(0)}초 경과`;
+    if (total > 1)
+      busy(true, "사진을 내보내는 중", done / total, state.current ?? "");
+    if (state.finished) return state;
+  }
+}
+
 $("download").onclick = async () => {
-  if (!current) return;
-  const photo = current,
-    format = $("exportFormat").value,
-    size = Number($("exportSize").value);
-  let dest = null;
+  const targets = exportTargets();
+  if (!targets.length) return;
+  const format = $("exportFormat").value,
+    size = Number($("exportSize").value),
+    many = targets.length > 1;
+  let dest = null,
+    folder = null;
   if (shell.api) {
     try {
-      dest = await shell.api.save_dialog(exportFilename(photo, format), format);
+      dest = many
+        ? null
+        : await shell.api.save_dialog(
+            exportFilename(targets[0], format),
+            format,
+          );
+      folder = many ? await shell.api.folder_dialog() : null;
     } catch {
-      dest = null;
+      dest = folder = null;
     }
-    if (!dest) return; // the native save panel was cancelled
+    if (many ? !folder : !dest) return; // the native panel was cancelled
   }
   $("download").disabled = $("cancelExport").disabled = true;
   $("exportProgress").hidden = false;
-  $("exportProgressText").textContent = size
-    ? `긴 변 ${size.toLocaleString()} px로 현상 중…`
-    : "원본 크기로 현상 중… 큰 RAW는 시간이 걸립니다";
+  $("exportBar").style.width = "0%";
+  $("exportProgressText").textContent = many
+    ? `0 / ${targets.length}장`
+    : size
+      ? `긴 변 ${size.toLocaleString()} px로 현상 중…`
+      : "원본 크기로 현상 중… 큰 RAW는 시간이 걸립니다";
+  if (many) busy(true, "사진을 내보내는 중", 0);
   try {
-    const res = await api(
-      `/api/photos/${photo.id}/export`,
-      json("POST", {
-        settings,
-        format,
-        quality: Number($("quality").value),
-        long_edge: size,
-        dest,
-      }),
-    );
-    if (dest) {
-      const saved = await res.json();
-      $("exportDialog").close();
-      toast(`저장했습니다 · ${dest.split(/[\\/]/).pop()}`, {
-        label: "폴더에서 보기",
-        run: () => shell.api?.reveal(saved.path),
-      });
-    } else {
-      const url = URL.createObjectURL(await res.blob());
+    const started = await (
+      await api(
+        "/api/export",
+        json("POST", {
+          photos: targets.map((p) => ({
+            id: p.id,
+            settings: p.id === current?.id ? settings : p.settings,
+          })),
+          format,
+          quality: Number($("quality").value),
+          long_edge: size,
+          dest,
+          folder,
+        }),
+      )
+    ).json();
+    const state = await pollExport(started.job, targets.length);
+    $("exportDialog").close();
+    if (state.failed.length)
+      toast(
+        `${state.written.length}장 저장, ${state.failed.length}장 실패\n` +
+          state.failed
+            .slice(0, 5)
+            .map((f) => `${f.name}: ${f.error}`)
+            .join("\n"),
+      );
+    if (!shell.api) {
+      // Browser mode hands back one rendered image to download.
+      const blob = await (await api(`/api/export/${started.job}/file`)).blob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = exportFilename(photo, format);
+      link.download = exportFilename(targets[0], format);
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-      $("exportDialog").close();
-      toast("보정된 사진을 내보냈습니다.");
+      if (!state.failed.length) toast("보정된 사진을 내보냈습니다.");
+    } else if (!state.failed.length) {
+      const where = folder ?? dest;
+      toast(
+        many
+          ? `${state.written.length}장을 저장했습니다.`
+          : `저장했습니다 · ${String(where).split(/[\\/]/).pop()}`,
+        {
+          label: "폴더에서 보기",
+          run: () => shell.api?.reveal(state.written[0] ?? where),
+        },
+      );
     }
   } catch (e) {
     toast(e.message);
   } finally {
     $("download").disabled = $("cancelExport").disabled = false;
     $("exportProgress").hidden = true;
+    busy(false);
   }
 };
 // --- keyboard ----------------------------------------------------------------
@@ -933,6 +1334,9 @@ const SHORTCUTS = [
   ["드래그", "확대했을 때 사진 옮기기"],
   ["R", "오른쪽 90° 회전"],
   ["I", "사진 정보"],
+  ["C", "자르기 도구 열기 · 적용"],
+  ["⌫", "선택한 사진 삭제"],
+  [`${MOD} ⇧ A`, "라이브러리에서 모두 선택"],
   [`${MOD} /`, "이 창 열기"],
   ["슬라이더 더블클릭", "해당 보정만 기본값으로"],
 ];
@@ -965,6 +1369,8 @@ document.addEventListener("keydown", (e) => {
       return (e.preventDefault(), stepZoom(1));
     if (e.key === "-") return (e.preventDefault(), stepZoom(-1));
     if (zooms[e.key]) return (e.preventDefault(), zooms[e.key]());
+    if (e.shiftKey && e.key.toLowerCase() === "a")
+      return (e.preventDefault(), $("selectAll").click());
   }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
   if (mod && e.key.toLowerCase() === "z") {
@@ -977,6 +1383,13 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") (e.preventDefault(), step(1));
   if (e.key.toLowerCase() === "r") $("rotate").click();
   if (e.key.toLowerCase() === "i") $("infoButton").click();
+  if (e.key.toLowerCase() === "c") $("cropTool").click();
+  if (e.key === "Escape" && cropping) $("cropCancel").click();
+  if (e.key === "Enter" && cropping) $("cropApply").click();
+  if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault();
+    selected.size > 1 ? $("deleteSelected").click() : $("deletePhoto").click();
+  }
 });
 initCurveEditor();
 presetButtons();
