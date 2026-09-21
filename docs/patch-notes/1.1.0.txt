@@ -1,0 +1,44 @@
+나만의빛 1.1.0 패치 노트 (2026-09-21)
+
+내려받기
+macOS : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg
+Windows 설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe
+Windows 무설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip
+
+
+■ 신규
+
+- 사진 삭제가 추가됩니다. 휴지통 버튼 또는 Delete 키로 지울 수 있습니다.
+- 라이브러리에서 Ctrl(Cmd)·Shift 클릭으로 여러 장을 선택해 한 번에 지울 수 있습니다.
+- 전체 / 선택 내보내기가 추가됩니다. 사진마다 저장된 보정값을 각각 적용합니다.
+- 자유 영역 자르기가 추가됩니다. 단축키 C로 열고, Enter 적용 / Esc 취소합니다.
+- WebP 내보내기가 추가됩니다.
+- 여러 장을 내보낼 때 진행률 화면이 표시됩니다.
+
+
+■ 개선
+
+- 자르기 : 비율 고정, 중앙 기준 → 모서리를 끌어 자유 영역 지정, 안쪽을 끌어 이동
+- 자르기 비율 : 1:1 / 4:3 / 3:2 / 16:9 → 자유, 원본 비율 추가
+- 내보내기 형식 : JPEG / PNG / TIFF → WebP 추가
+- 내보내기 범위 : 현재 사진 1장 → 현재 / 선택 / 전체
+- 자르기 도구에 삼등분선이 표시됩니다.
+- 사진 삭제 시 확인 창이 표시됩니다.
+- 내보내기에 실패한 사진이 있으면 사진 이름과 실패 사유를 함께 알려줍니다.
+
+
+■ 버그 수정
+
+- Windows에서 사진을 내보내는 동안 창이 "응답 없음"으로 표시되던 현상이 수정됩니다.
+- WebP를 선택하면 품질 슬라이더가 사라지던 현상이 수정됩니다.
+- 앱을 업데이트해도 이전 버전 화면이 그대로 표시되던 현상이 수정됩니다.
+
+
+■ 참고
+
+- 사진을 지워도 원본 파일은 삭제되지 않습니다.
+- 자르기는 보정값으로 저장되므로 언제든 되돌릴 수 있습니다.
+- 이전 버전에서 비율로 잘라 둔 사진은 그대로 유지됩니다.
+- WebP는 긴 변 16,383px까지 저장할 수 있습니다.
+- macOS는 Apple Silicon(M1 이상), Windows는 x64 전용입니다.
+- 서명이 없어 처음 열 때 경고가 뜹니다. macOS는 우클릭 후 열기, Windows는 추가 정보 후 실행을 눌러 주세요.
