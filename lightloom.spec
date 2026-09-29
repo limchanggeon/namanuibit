@@ -5,7 +5,7 @@
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 APP_NAME = "나만의빛"
 VERSION = (Path(SPECPATH) / "VERSION").read_text().strip()
@@ -15,7 +15,7 @@ IS_MAC = sys.platform == "darwin"
 # itself is 나만의빛.app. Windows has no such limit.
 BINARY_NAME = "Namanuibit" if IS_MAC else APP_NAME
 
-datas = [("static", "static"), ("assets/icon.png", "assets")]
+datas = [("static", "static"), ("assets/icon.png", "assets"), ("VERSION", ".")]
 binaries = []
 # rawpy carries the LibRaw shared library next to its extension module.
 hiddenimports = [
@@ -23,12 +23,18 @@ hiddenimports = [
     "adjustments",
     "engine",
     "paths",
+    "render_worker",
+    "settings",
+    "updater",
+    "certifi",
     "xmp",
     "scipy.ndimage",
     "scipy._lib.array_api_compat.numpy.fft",
     "scipy.special._special_ufuncs",
     *collect_submodules("uvicorn"),
 ]
+# The updater verifies GitHub's certificate against certifi's bundle.
+datas += collect_data_files("certifi")
 for package in ("rawpy", "webview"):
     package_datas, package_binaries, package_hidden = collect_all(package)
     datas += package_datas

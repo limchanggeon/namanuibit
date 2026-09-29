@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import paths
 import render_worker
+import updater
 from render_worker import RASTER, RAW, decode, encode
 from settings import FORMATS, Settings
 
@@ -398,6 +399,44 @@ def preset(file: UploadFile):
         raise HTTPException(400, "올바른 XMP XML 파일이 아닙니다.")
 
 
+@app.get("/api/update")
+def update_check(force: bool = False):
+    try:
+        return updater.check(force=force)
+    except Exception as error:
+        # Offline or rate limited: the page checks quietly on launch and only
+        # reports this when someone asked for the check themselves.
+        raise HTTPException(503, f"업데이트를 확인하지 못했습니다: {error}")
+
+
+@app.post("/api/update/download")
+def update_download():
+    try:
+        return updater.start_download()
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    except Exception as error:
+        raise HTTPException(503, f"업데이트를 확인하지 못했습니다: {error}")
+
+
+@app.get("/api/update/download")
+def update_download_state():
+    state = updater.download_state()
+    if not state:
+        raise HTTPException(404, "진행 중인 업데이트가 없습니다.")
+    return state
+
+
+@app.post("/api/update/download/cancel")
+def update_download_cancel():
+    updater.cancel_download()
+    return {"cancelled": True}
+
+
 @app.get("/api/health")
 def health():
-    return {"app": "lightloom", "engine_version": 2}
+    return {
+        "app": "lightloom",
+        "engine_version": 2,
+        "version": updater.current_version(),
+    }

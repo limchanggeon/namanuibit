@@ -1380,3 +1380,43 @@ img {
   background: #c98a85;
   color: #160f0f;
 }
+
+/* --- updates --------------------------------------------------------------- */
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#checkUpdate.has-update {
+  color: var(--accent);
+  border: 1px solid #d6b88b55;
+}
+#updateDialog {
+  width: 460px;
+}
+.update-notes {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.75;
+  color: #aab3b3;
+  background: #1b1e20;
+  border: 1px solid #33383a;
+  border-radius: 6px;
+  padding: 14px 16px;
+  user-select: text;
+}
+.update-page {
+  display: inline-block;
+  margin: 12px 0 22px;
+  font-size: 10px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.update-page:hover {
+  text-decoration: underline;
+}
+#updateProgress {
+  margin: 0 0 22px;
+}

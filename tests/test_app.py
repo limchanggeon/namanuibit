@@ -1,3 +1,4 @@
+from pathlib import Path
 from io import BytesIO
 import json
 import numpy as np
@@ -281,3 +282,118 @@ def test_app_assets_are_never_cached(client):
     # A stale page after an update is worse than re-reading a few local files.
     for url in ["/", "/static/app.js", "/advanced-config.js", "/api/health"]:
         assert client.get(url).headers["cache-control"] == "no-store", url
+
+
+def fake_release(tag="v9.9.9", payload=b"new build"):
+    import hashlib
+    import updater
+
+    name = updater.ASSETS[updater.platform() or "mac"]
+    return {
+        "tag_name": tag,
+        "body": "## 새 기능\n- **무언가** 추가",
+        "html_url": "https://github.com/limchanggeon/namanuibit/releases/tag/" + tag,
+        "assets": [
+            {
+                "name": name,
+                "size": len(payload),
+                "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                "browser_download_url": updater.DOWNLOAD_PREFIX + f"{tag}/{name}",
+            }
+        ],
+    }
+
+
+class FakeResponse(BytesIO):
+    headers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+def patch_updater(monkeypatch, tmp_path, release, payload, version="1.1.0"):
+    import updater
+
+    monkeypatch.setattr(updater, "current_version", lambda: version)
+    monkeypatch.setattr(updater, "fetch_latest", lambda: release)
+    monkeypatch.setattr(updater, "download_dir", lambda: tmp_path)
+    monkeypatch.setattr(updater, "_open", lambda url, timeout: FakeResponse(payload))
+    monkeypatch.setattr(updater, "_job", None)
+    updater._checked.update(at=0.0, result=None)
+    return updater
+
+
+def wait_for_update(client, timeout=10):
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        state = client.get("/api/update/download").json()
+        if state["finished"]:
+            return state
+        time.sleep(0.02)
+    raise AssertionError("update download never finished")
+
+
+def test_version_ordering():
+    import updater
+
+    assert updater.parse("v1.10.0") > updater.parse("1.9.9")
+    assert updater.parse("1.2") < updater.parse("1.2.1")
+    assert updater.parse("garbage") < updater.parse("0.0.1")
+
+
+def test_update_check_reports_newer_release(client, tmp_path, monkeypatch):
+    release = fake_release("v9.9.9")
+    patch_updater(monkeypatch, tmp_path, release, b"x")
+    info = client.get("/api/update?force=true").json()
+    assert info["current"] == "1.1.0" and info["latest"] == "9.9.9"
+    assert info["newer"] is True
+    assert info["asset"]["sha256"]
+
+
+def test_update_check_when_current(client, tmp_path, monkeypatch):
+    patch_updater(monkeypatch, tmp_path, fake_release("v1.1.0"), b"x")
+    assert client.get("/api/update?force=true").json()["newer"] is False
+    assert client.post("/api/update/download").status_code == 400
+
+
+def test_update_download_verifies_digest(client, tmp_path, monkeypatch):
+    payload = b"a verified installer"
+    patch_updater(monkeypatch, tmp_path, fake_release("v9.9.9", payload), payload)
+    assert client.post("/api/update/download").status_code == 200
+    state = wait_for_update(client)
+    assert state["error"] is None
+    assert Path(state["path"]).read_bytes() == payload
+    assert "9.9.9" in Path(state["path"]).name
+
+
+def test_update_download_rejects_tampered_file(client, tmp_path, monkeypatch):
+    release = fake_release("v9.9.9", b"what the release says")
+    patch_updater(monkeypatch, tmp_path, release, b"what actually arrived!")
+    client.post("/api/update/download")
+    state = wait_for_update(client)
+    assert state["error"] and state["path"] is None
+    # Nothing half-written is left behind for someone to run.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_update_ignores_assets_from_elsewhere(client, tmp_path, monkeypatch):
+    release = fake_release("v9.9.9")
+    release["assets"][0]["browser_download_url"] = "https://evil.example/installer"
+    patch_updater(monkeypatch, tmp_path, release, b"x")
+    assert client.get("/api/update?force=true").json()["asset"] is None
+
+
+def test_update_check_offline(client, monkeypatch):
+    import updater
+
+    def offline():
+        raise OSError("network down")
+
+    monkeypatch.setattr(updater, "fetch_latest", offline)
+    updater._checked.update(at=0.0, result=None)
+    assert client.get("/api/update?force=true").status_code == 503

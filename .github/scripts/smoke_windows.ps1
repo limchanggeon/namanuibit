@@ -98,6 +98,12 @@ try {
     $left = Invoke-RestMethod "http://127.0.0.1:8791/api/photos"
     if ($left.Count -ne 0) { throw "delete left $($left.Count) photos behind" }
     Write-Host "delete works"
+
+    # The updater talks HTTPS from inside the frozen bundle, where certificate
+    # lookup is the usual thing to break.
+    $update = Invoke-RestMethod "http://127.0.0.1:8791/api/update?force=true"
+    if (-not $update.latest) { throw "update check returned no release" }
+    Write-Host "update check: current $($update.current), latest $($update.latest), asset $($update.asset.name)"
 } finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force }
 }

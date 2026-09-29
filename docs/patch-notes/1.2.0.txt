@@ -1,0 +1,22 @@
+나만의빛 1.2.0 패치 노트 (2026-09-29)
+
+내려받기
+- macOS : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg
+- Windows 설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe
+- Windows 무설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip
+
+
+■ 신규
+
+- 자동 업데이트가 추가됩니다. 앱을 켜면 새 버전이 있는지 확인해 알려줍니다.
+- 알림에서 업데이트를 누르면 앱 안에서 설치 파일을 받고, 설치까지 이어집니다.
+- 화면 오른쪽 아래 버전 표시를 누르거나, 사진 메뉴의 업데이트 확인으로 직접 확인할 수 있습니다.
+
+
+■ 참고
+
+- 받은 설치 파일이 릴리스에 올라간 파일과 같은지 확인한 뒤에 실행합니다. 다르면 지우고 다시 받게 합니다.
+- Windows는 설치 프로그램이 실행되면서 앱이 닫힙니다.
+- macOS는 디스크 이미지가 열리면 나만의빛을 응용 프로그램 폴더로 끌어다 놓아 바꿔 주세요.
+- 인터넷에 연결되어 있지 않으면 확인을 조용히 건너뜁니다.
+- 1.1.0 이하 버전에는 자동 업데이트가 없어서, 이번 1.2.0은 위 링크에서 직접 받아 설치해야 합니다. 다음 버전부터 앱이 알려줍니다.

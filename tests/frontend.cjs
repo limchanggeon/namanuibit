@@ -20,11 +20,35 @@ const dom = new JSDOM(fs.readFileSync("static/index.html", "utf8"), {
 const w = dom.window;
 const SAVED = "/Users/me/Pictures/test-나만의빛.jpg";
 let jobPolls = 0;
+let updatePolls = 0;
 w.fetch = async (url, opts = {}) => {
   calls.push({ url, ...opts });
   const body = () => {
     if (url === "/api/photos") return [photo];
     if (url === "/api/export") return { job: "job1", total: 1 };
+    if (url.startsWith("/api/update/download")) {
+      if (opts.method === "POST")
+        return { done: 0, total: 10, finished: false };
+      updatePolls++;
+      return {
+        done: updatePolls > 1 ? 10 : 4,
+        total: 10,
+        finished: updatePolls > 1,
+        error: null,
+        path:
+          updatePolls > 1 ? "/Users/me/Downloads/Namanuibit-1.2.0.dmg" : null,
+      };
+    }
+    if (url.startsWith("/api/update"))
+      return {
+        current: "1.1.0",
+        latest: "1.2.0",
+        newer: true,
+        notes:
+          "## 새 기능\n- **자동 업데이트** 추가\n[패치 노트](https://x.test)",
+        page: "https://github.com/limchanggeon/namanuibit/releases/tag/v1.2.0",
+        asset: { name: "Namanuibit-macOS-arm64.dmg", size: 10, sha256: "ab" },
+      };
     if (url.startsWith("/api/export/job1")) {
       // Report one unfinished poll first so the progress path is exercised.
       jobPolls++;
@@ -229,6 +253,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // Desktop shell: export asks for a path and posts it instead of downloading.
   let asked = null;
   let revealed = null;
+  let installed = 0;
   w.pywebview = {
     api: {
       save_dialog: async (name, format) => {
@@ -236,6 +261,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
         return "/Users/me/Pictures/test-나만의빛.jpg";
       },
       reveal: (path) => (revealed = path),
+      install_update: async () => {
+        installed++;
+        return { ok: true };
+      },
     },
   };
   w.dispatchEvent(new w.Event("pywebviewready"));
@@ -316,9 +345,37 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     "새로운 작업",
   );
 
+  // Updates: a manual check opens the dialog with the notes as plain text,
+  // downloads with progress, then hands the installer to the shell.
+  w.document.getElementById("checkUpdate").click();
+  await wait(40);
+  assert(w.document.getElementById("updateDialog").hasAttribute("open"));
+  assert.equal(
+    w.document.getElementById("updateTitle").textContent,
+    "새 버전 1.2.0",
+  );
+  const notes = w.document.getElementById("updateNotes").textContent;
+  assert(!/[#*\[\]]/.test(notes), `notes should be plain text: ${notes}`);
+  assert(notes.includes("자동 업데이트 추가") && notes.includes("패치 노트"));
+  assert(
+    w.document.getElementById("checkUpdate").classList.contains("has-update"),
+  );
+  w.document.getElementById("updateGo").click();
+  await wait(900);
+  assert(
+    calls.some((c) => c.url === "/api/update/download" && c.method === "POST"),
+  );
+  assert.equal(
+    w.document.getElementById("updateGo").textContent,
+    "설치하고 종료",
+  );
+  w.document.getElementById("updateGo").click();
+  await wait(30);
+  assert.equal(installed, 1);
+
   await wait(220);
   console.log(
-    "PASS: selection, presets, autosave, undo/redo, rotate, compare, reset, panel markers, search, zoom (buttons, wheel, pinch), crop tool, batch export with progress, webp, delete",
+    "PASS: selection, presets, autosave, undo/redo, rotate, compare, reset, panel markers, search, zoom (buttons, wheel, pinch), crop tool, batch export with progress, webp, delete, update check and install",
   );
   w.close();
 })().catch((e) => {

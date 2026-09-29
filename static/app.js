@@ -1329,6 +1329,146 @@ $("download").onclick = async () => {
     busy(false);
   }
 };
+// --- updates -----------------------------------------------------------------
+// The app finds and fetches a newer release itself, verifies it, then hands the
+// installer to the OS. Installing over a running copy is the OS's job.
+let update = null,
+  updateReady = false,
+  updatePolling = false;
+const onMac = navigator.platform?.startsWith("Mac") !== false;
+
+// Release bodies are Markdown; this panel shows plain text.
+function plainNotes(markdown) {
+  return markdown
+    .replace(/\r/g, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/^\s*\|?\s*-{3,}.*$/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+function megabytes(n) {
+  return (n / 1e6).toFixed(1);
+}
+function resetUpdateDialog() {
+  updateReady = false;
+  $("updateProgress").hidden = true;
+  $("updateBar").style.width = "0%";
+  $("updateGo").disabled = false;
+  $("updateGo").textContent = shell.api ? "받기" : "다운로드 페이지 열기";
+  $("updateLater").textContent = "나중에";
+}
+function showUpdate(info) {
+  $("updateTitle").textContent = `새 버전 ${info.latest}`;
+  $("updateSub").textContent = `지금 쓰는 버전은 ${info.current}입니다.`;
+  $("updateNotes").textContent =
+    plainNotes(info.notes) || "변경 내용이 없습니다.";
+  $("updatePage").href = info.page;
+  resetUpdateDialog();
+  if (!info.asset && shell.api) {
+    $("updateGo").textContent = "다운로드 페이지 열기";
+  }
+  $("updateDialog").showModal();
+}
+async function checkForUpdate(manual) {
+  let info;
+  try {
+    info = await (
+      await api(`/api/update${manual ? "?force=true" : ""}`)
+    ).json();
+  } catch (e) {
+    // A launch-time check stays quiet when offline; asking does not.
+    if (manual) toast(e.message);
+    return;
+  }
+  $("checkUpdate").textContent = `v${info.current}`;
+  if (!info.newer) {
+    update = null;
+    $("checkUpdate").classList.remove("has-update");
+    if (manual) toast(`최신 버전입니다 · v${info.current}`);
+    return;
+  }
+  update = info;
+  $("checkUpdate").classList.add("has-update");
+  $("checkUpdate").textContent = `v${info.current} → v${info.latest} 업데이트`;
+  if (manual) showUpdate(info);
+  else
+    toast(`새 버전이 나왔습니다 · v${info.latest}`, {
+      label: "업데이트",
+      run: () => showUpdate(info),
+    });
+}
+async function pollUpdateDownload() {
+  updatePolling = true;
+  try {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 300));
+      const state = await (await api("/api/update/download")).json();
+      const share = state.total ? state.done / state.total : 0;
+      $("updateBar").style.width = Math.round(share * 100) + "%";
+      $("updateProgressText").textContent =
+        `${megabytes(state.done)} / ${megabytes(state.total)} MB 받는 중`;
+      if (!state.finished) continue;
+      if (state.error) throw Error(state.error);
+      return state;
+    }
+  } finally {
+    updatePolling = false;
+  }
+}
+$("updateGo").onclick = async () => {
+  if (!update) return;
+  if (!shell.api || !update.asset) {
+    window.open(update.page, "_blank");
+    return;
+  }
+  if (updateReady) {
+    $("updateGo").disabled = true;
+    const result = await shell.api.install_update();
+    if (!result?.ok) {
+      $("updateGo").disabled = false;
+      return toast(result?.error ?? "설치 파일을 열지 못했습니다.");
+    }
+    $("updateProgressText").textContent = onMac
+      ? "디스크 이미지를 열었습니다. 나만의빛을 응용 프로그램 폴더로 끌어다 놓아 바꾸세요."
+      : "설치 프로그램을 실행했습니다. 앱을 닫습니다.";
+    return;
+  }
+  $("updateGo").disabled = true;
+  $("updateLater").textContent = "취소";
+  $("updateProgress").hidden = false;
+  $("updateProgressText").textContent = "받을 준비 중…";
+  try {
+    await api("/api/update/download", { method: "POST" });
+    await pollUpdateDownload();
+    updateReady = true;
+    $("updateBar").style.width = "100%";
+    $("updateProgressText").textContent = onMac
+      ? "받기 완료 · 설치하면 디스크 이미지가 열리고 앱이 닫힙니다."
+      : "받기 완료 · 설치하면 설치 프로그램이 실행되고 앱이 닫힙니다.";
+    $("updateGo").textContent = "설치하고 종료";
+    $("updateGo").disabled = false;
+    $("updateLater").textContent = "나중에";
+  } catch (e) {
+    toast(e.message);
+    resetUpdateDialog();
+  }
+};
+$("updateLater").onclick = async () => {
+  if (updatePolling) {
+    try {
+      await api("/api/update/download/cancel", { method: "POST" });
+    } catch {}
+  }
+  $("updateDialog").close();
+};
+$("checkUpdate").onclick = () =>
+  update ? showUpdate(update) : checkForUpdate(true);
+setTimeout(() => checkForUpdate(false), 3000);
+
 // --- keyboard ----------------------------------------------------------------
 const MOD = navigator.platform?.startsWith("Mac") === false ? "Ctrl" : "⌘";
 const SHORTCUTS = [

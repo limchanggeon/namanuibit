@@ -131,6 +131,36 @@ class Bridge:
     def reveal(self, path: str):
         reveal(Path(path))
 
+    def install_update(self):
+        """Hand the verified installer to the OS, then get out of its way."""
+        import updater
+
+        state = updater.download_state()
+        if not state or not state.get("path") or state.get("error"):
+            return {"ok": False, "error": "받아 둔 업데이트가 없습니다."}
+        target = Path(state["path"])
+        if not target.is_file():
+            return {"ok": False, "error": "받아 둔 설치 파일을 찾을 수 없습니다."}
+        try:
+            if sys.platform == "darwin":
+                # Mounts the image and shows it in Finder, ready to drag.
+                subprocess.run(["open", str(target)], check=True)
+            elif os.name == "nt":
+                # ShellExecute, not CreateProcess: the installer asks for admin
+                # rights, and only ShellExecute raises the UAC prompt for that.
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            else:
+                return {
+                    "ok": False,
+                    "error": "이 운영체제는 자동 설치를 지원하지 않습니다.",
+                }
+        except Exception as error:
+            return {"ok": False, "error": f"설치 파일을 열지 못했습니다: {error}"}
+        # Quit so the new version can replace this one; the delay lets this
+        # call return to the page first.
+        threading.Timer(1.2, self.window.destroy).start()
+        return {"ok": True, "path": str(target)}
+
     def open_library(self):
         reveal(paths.user_data())
 
@@ -163,6 +193,7 @@ def build_menu(bridge: Bridge):
                 MenuAction("내보내기…", click("exportTop")),
                 MenuSeparator(),
                 MenuAction("라이브러리 폴더 열기", bridge.open_library),
+                MenuAction("업데이트 확인…", click("checkUpdate")),
             ],
         ),
         Menu(

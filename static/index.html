@@ -206,7 +206,13 @@
     <footer>
       <span>나만의빛 <b>로컬 사진 스튜디오</b></span
       ><span id="dimensions">원본을 보존하는 비파괴 편집</span
-      ><button id="shortcutsButton" class="footer-link">단축키 ⌘/</button>
+      ><span class="footer-right"
+        ><button id="checkUpdate" class="footer-link" title="업데이트 확인">
+          버전 확인</button
+        ><button id="shortcutsButton" class="footer-link">
+          단축키 ⌘/
+        </button></span
+      >
     </footer>
     <input
       type="file"
@@ -275,6 +281,30 @@
       <div id="presetReportDetails"></div>
       <div class="dialog-actions">
         <button id="closePresetReport" class="primary">닫기</button>
+      </div>
+    </dialog>
+    <dialog id="updateDialog">
+      <div class="dialog-heading">
+        <div class="eyebrow">UPDATE</div>
+        <h2 id="updateTitle">새 버전이 있습니다</h2>
+        <p id="updateSub"></p>
+      </div>
+      <div class="update-notes" id="updateNotes"></div>
+      <a id="updatePage" class="update-page" target="_blank" rel="noopener"
+        >릴리스 페이지에서 전체 보기 ↗</a
+      >
+      <div class="export-progress" id="updateProgress" hidden>
+        <div class="progress-row">
+          <span class="spinner"></span>
+          <span id="updateProgressText"></span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="updateBar"></div>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button id="updateLater">나중에</button
+        ><button class="primary" id="updateGo">받기</button>
       </div>
     </dialog>
     <dialog id="confirmDialog">
