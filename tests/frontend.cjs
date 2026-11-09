@@ -25,6 +25,8 @@ w.fetch = async (url, opts = {}) => {
   calls.push({ url, ...opts });
   const body = () => {
     if (url === "/api/photos") return [photo];
+    if (url === "/api/presets") return [];
+    if (url.endsWith("/level")) return { angle: 1.5 };
     if (url === "/api/export") return { job: "job1", total: 1 };
     if (url.startsWith("/api/update/download")) {
       if (opts.method === "POST")
@@ -310,6 +312,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const level = w.document.getElementById("s-straighten");
   level.value = "-2.5";
   level.dispatchEvent(new w.Event("input"));
+  assert.equal(level.value, "-2.5");
+  w.document.getElementById("autoLevel").click();
+  await wait(30);
+  assert.equal(level.value, "1.5");
   w.document.getElementById("cropApply").click();
   await wait(60);
   const cropped = calls
@@ -322,7 +328,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     `crop_w was ${cropped.crop_w}`,
   );
   assert.equal(cropped.crop_h, 1);
-  assert.equal(cropped.straighten, -2.5);
+  assert.equal(cropped.straighten, 1.5);
   assert(
     Math.abs(cropped.crop_x - 1 / 6) < 0.01,
     `crop_x was ${cropped.crop_x}`,

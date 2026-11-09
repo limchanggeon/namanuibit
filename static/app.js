@@ -37,9 +37,25 @@ let photos = [],
 let selected = new Set();
 let lastClicked = null;
 let custom = [];
-try {
-  custom = JSON.parse(localStorage.getItem("lightloom-presets") || "[]");
-} catch {}
+const savePresets = () => api("/api/presets", json("PUT", custom));
+async function loadPresets() {
+  custom = await (await api("/api/presets")).json();
+  // Builds up to 1.3.0 kept presets in localStorage; move over what is left.
+  let old = [];
+  try {
+    old = JSON.parse(localStorage.getItem("lightloom-presets") || "[]");
+  } catch {}
+  if (old.length) {
+    for (const p of old)
+      if (!custom.some((item) => item.name === p.name)) custom.push(p);
+    await savePresets();
+    try {
+      localStorage.removeItem("lightloom-presets");
+    } catch {}
+  }
+  presetButtons();
+  if (custom.length) showPresetReport(custom.at(-1));
+}
 const builtins = [
   {
     name: "내추럴 라이트",
@@ -690,7 +706,7 @@ $("presetInput").onchange = async (e) => {
       const existing = custom.findIndex((item) => item.name === p.name);
       if (existing >= 0) custom[existing] = p;
       else custom.push(p);
-      localStorage.setItem("lightloom-presets", JSON.stringify(custom));
+      await savePresets();
       presetButtons();
       if (current) {
         checkpoint();
@@ -884,6 +900,25 @@ $("s-straighten").addEventListener("dblclick", () => {
   syncControls();
   schedulePreview();
 });
+$("autoLevel").onclick = async () => {
+  if (!cropping) return;
+  const button = $("autoLevel");
+  button.disabled = true;
+  try {
+    const { angle } = await (
+      await api(`/api/photos/${current.id}/level`, json("POST", settings))
+    ).json();
+    if (angle === null) return toast("맞출 만한 수직·수평선을 찾지 못했습니다.");
+    settings.straighten = angle;
+    syncControls();
+    schedulePreview();
+    toast(angle ? `${angle > 0 ? "+" : ""}${angle}° 맞췄습니다.` : "이미 수평입니다.");
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    button.disabled = false;
+  }
+};
 function isFullFrame(r) {
   return r.x === 0 && r.y === 0 && r.w === 1 && r.h === 1;
 }
@@ -1603,7 +1638,7 @@ function showPresetReport(p) {
 }
 $("presetReportButton").onclick = () => $("presetReport").showModal();
 $("closePresetReport").onclick = () => $("presetReport").close();
-if (custom.length) showPresetReport(custom.at(-1));
+loadPresets().catch((e) => toast(e.message));
 
 $("controlSearch").oninput = (e) => {
   const query = e.target.value.toLowerCase().trim();

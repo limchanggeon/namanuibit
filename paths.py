@@ -40,3 +40,19 @@ def user_data() -> Path:
 def web_storage() -> Path:
     """Where the embedded webview keeps localStorage (imported XMP presets)."""
     return _platform_data_root() / APP_NAME / "webview"
+
+
+def legacy_preset_stores() -> list[Path]:
+    """WebKit localStorage files where builds up to 1.3.0 kept XMP presets.
+
+    The window's origin carried a fresh port every launch, so each launch left
+    its presets in a separate file. Windows (WebView2) uses LevelDB instead and
+    is not read.
+    """
+    if sys.platform != "darwin":
+        return []
+    root = Path.home() / "Library" / "WebKit" / "com.namanuibit.studio" / "WebsiteData"
+    return sorted(
+        root.glob("Default/*/*/LocalStorage/localstorage.sqlite3"),
+        key=lambda p: p.stat().st_mtime,
+    )

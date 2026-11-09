@@ -11,6 +11,8 @@ import app as studio
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(studio, "DATA", tmp_path)
+    # Never pick up the developer's own old presets.
+    monkeypatch.setattr(studio.paths, "legacy_preset_stores", lambda: [])
     return TestClient(studio.app)
 
 
@@ -217,6 +219,58 @@ def test_straighten_trims_to_same_ratio(client):
     assert Image.open(BytesIO(r.content)).size == (48, 64)
     bad = {"straighten": 46}
     assert client.post(f"/api/photos/{p['id']}/preview", json=bad).status_code == 422
+
+
+def test_auto_level_finds_a_tilted_horizon(client):
+    from PIL import ImageDraw
+    from engine import level_angle
+
+    for tilt in (4, -9.5):
+        # Draw at 4x and shrink so the horizon is antialiased like a real photo.
+        im = Image.new("RGB", (3600, 2400), (90, 110, 140))
+        t = np.tan(np.radians(tilt)) * 1800
+        ImageDraw.Draw(im).polygon(
+            [(0, 1200 + t), (3600, 1200 - t), (3600, 2400), (0, 2400)], (60, 80, 40)
+        )
+        a = np.asarray(im.resize((900, 600), Image.LANCZOS), np.float32) / 255
+        assert abs(level_angle(a) - tilt) <= 0.2
+    assert level_angle(np.random.default_rng(0).random((300, 400, 3))) is None
+
+    p = photo(client)
+    r = client.post(f"/api/photos/{p['id']}/level", json={"rotation": 1})
+    assert r.status_code == 200 and "angle" in r.json()
+
+
+def test_presets_survive_on_disk(client):
+    assert client.get("/api/presets").json() == []
+    items = [{"name": "필름", "settings": {"exposure": 0.5}}]
+    assert client.put("/api/presets", json=items).status_code == 200
+    assert (studio.DATA / "presets.json").exists()
+    assert client.get("/api/presets").json() == items
+    # The library listing only reads photo folders, not this file.
+    assert client.get("/api/photos").status_code == 200
+
+
+def test_presets_recovered_from_old_webkit_storage(client, tmp_path, monkeypatch):
+    import sqlite3
+
+    stores = []
+    for i, names in enumerate([["필름", "옛것"], ["필름"]]):
+        store = tmp_path / f"old{i}.sqlite3"
+        with sqlite3.connect(store) as db:
+            db.execute("CREATE TABLE ItemTable (key TEXT, value BLOB)")
+            value = json.dumps([{"name": n, "v": i} for n in names], ensure_ascii=False)
+            db.execute(
+                "INSERT INTO ItemTable VALUES ('lightloom-presets', ?)",
+                (value.encode("utf-16-le"),),
+            )
+        stores.append(store)
+    stores.append(tmp_path / "missing.sqlite3")
+    monkeypatch.setattr(studio.paths, "legacy_preset_stores", lambda: stores)
+    got = client.get("/api/presets").json()
+    # The later file wins for a shared name; nothing is lost.
+    assert sorted((p["name"], p["v"]) for p in got) == [("옛것", 0), ("필름", 1)]
+    assert (studio.DATA / "presets.json").exists()
 
 
 def test_named_ratio_still_crops_for_old_libraries(client):

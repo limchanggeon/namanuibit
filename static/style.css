@@ -1274,6 +1274,15 @@ img {
 .crop-bar .slider label {
   margin-bottom: 0;
 }
+.crop-bar .slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  align-items: center;
+}
+.crop-bar .slider label {
+  grid-column: 1 / -1;
+}
 .crop-bar .primary {
   padding: 8px 16px;
 }

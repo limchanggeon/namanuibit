@@ -1,6 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-import json, uuid, os, shutil, threading, time
+import json, uuid, os, shutil, sqlite3, threading, time
 import numpy as np
 import rawpy  # noqa: F401  -- re-exported so tests can stub the decoder
 from PIL import Image
@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import paths
 import render_worker
+from engine import level_angle
 import updater
 from render_worker import RASTER, RAW, decode, encode
 from settings import FORMATS, Settings
@@ -275,6 +276,15 @@ def frame(pid: str, s: Settings):
     return Response(encode(render(a, uncropped)), media_type="image/jpeg")
 
 
+@app.post("/api/photos/{pid}/level")
+def level(pid: str, s: Settings):
+    """Straighten angle that levels the photo as currently turned, or None."""
+    record(pid)
+    with Image.open(DATA / pid / "preview.png") as im:
+        a = np.asarray(im.convert("RGB"), dtype=np.float32) / 255
+    return {"angle": level_angle(np.rot90(a, -s.rotation))}
+
+
 @app.put("/api/photos/{pid}/settings")
 def settings(pid: str, s: Settings):
     with LOCK:
@@ -384,6 +394,49 @@ def advanced_config():
         "window.ADVANCED = " + json.dumps(ui_config(), ensure_ascii=False) + ";",
         media_type="application/javascript",
     )
+
+
+# Imported presets live beside the library: the window's localStorage is keyed
+# by origin, and the server picks a new port every launch.
+def legacy_presets(stores):
+    """Presets left in old per-launch localStorage files, newest copy of each name."""
+    found = {}
+    for store in stores:
+        try:
+            with sqlite3.connect(f"file:{store}?mode=ro", uri=True) as db:
+                row = db.execute(
+                    "SELECT value FROM ItemTable WHERE key = 'lightloom-presets'"
+                ).fetchone()
+            if not row:
+                continue
+            value = row[0]
+            items = json.loads(
+                value.decode("utf-16-le") if isinstance(value, bytes) else value
+            )
+        except Exception:
+            continue  # a locked or foreign file is not worth failing the launch for
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and item.get("name"):
+                found[item["name"]] = item
+    return list(found.values())
+
+
+@app.get("/api/presets")
+def presets():
+    path = DATA / "presets.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    recovered = legacy_presets(paths.legacy_preset_stores())
+    return save_presets(recovered) if recovered else []
+
+
+@app.put("/api/presets")
+def save_presets(items: list[dict]):
+    with LOCK:
+        tmp = DATA / f"{uuid.uuid4().hex}.tmp"
+        tmp.write_text(json.dumps(items, ensure_ascii=False))
+        tmp.replace(DATA / "presets.json")
+    return items
 
 
 @app.post("/api/presets/import")

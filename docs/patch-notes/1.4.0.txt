@@ -1,0 +1,18 @@
+나만의빛 1.4.0 패치 노트 (2026-11-10)
+
+내려받기
+- macOS : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg
+- Windows 설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe
+- Windows 무설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip
+
+
+■ 신규
+
+- 자르기 도구(C 키)의 수평 맞추기 옆에 자동 버튼이 추가됩니다. 사진 속 건물, 창틀, 수평선 같은 수직·수평선을 찾아 기울기를 0.1° 단위로 맞춥니다.
+- 맞출 만한 선을 찾지 못하면 알려주고 각도는 그대로 둡니다. 자동으로 맞춘 뒤에도 슬라이더로 다듬을 수 있습니다.
+
+
+■ 수정
+
+- 가져온 XMP 프리셋이 앱을 다시 켜면 사라지던 문제를 고칩니다. 이제 사진 라이브러리와 같은 폴더에 저장되어 업데이트해도 남습니다.
+- macOS에서는 이전 버전이 남겨둔 프리셋을 처음 켤 때 자동으로 되살립니다. Windows에서 사라진 프리셋은 XMP 파일을 다시 가져와 주세요.
