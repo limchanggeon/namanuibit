@@ -1,0 +1,23 @@
+나만의빛 1.3.0 패치 노트 (2026-11-10)
+
+내려받기
+- macOS : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg
+- Windows 설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe
+- Windows 무설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip
+
+
+■ 신규
+
+- 자르기 도구(C 키)에 수평 맞추기가 추가됩니다. 아래쪽 슬라이더로 사진을 ±45° 안에서 0.1° 단위로 돌립니다.
+- 돌리면서 생기는 빈 모서리는 원본 비율을 유지한 채 자동으로 잘라냅니다. 이미 정해둔 자르기 영역과 비율도 그대로 유지됩니다.
+- 슬라이더를 두 번 클릭하면 0°로 돌아갑니다.
+
+
+■ 수정
+
+- 자르기 도구 안에서 90° 회전한 뒤 적용을 누르면 회전이 풀리던 문제를 고칩니다.
+
+
+■ 참고
+
+- 1.2.0을 쓰고 있다면 앱을 켤 때 업데이트 알림이 뜹니다. 알림에서 바로 받아 설치할 수 있습니다.

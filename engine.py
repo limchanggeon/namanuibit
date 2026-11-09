@@ -3,7 +3,7 @@
 import colorsys
 import numpy as np
 from PIL import Image
-from scipy.ndimage import gaussian_filter, minimum_filter
+from scipy.ndimage import gaussian_filter, minimum_filter, rotate
 from adjustments import COLORS
 
 LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
@@ -318,6 +318,18 @@ def finish(a, s):
     return a.clip(0, 1)
 
 
+def straighten(a, degrees):
+    """Rotate clockwise and keep the largest centred rectangle of the same ratio."""
+    h, w = a.shape[:2]
+    t = np.radians(abs(degrees))
+    c, sn = np.cos(t), np.sin(t)
+    k = min(w / (w * c + h * sn), h / (w * sn + h * c))
+    a = rotate(a, -degrees, axes=(1, 0), reshape=False, order=1, mode="nearest")
+    nw, nh = max(1, int(w * k)), max(1, int(h * k))
+    x, y = (w - nw) // 2, (h - nh) // 2
+    return a[y : y + nh, x : x + nw]
+
+
 def process(base, s):
     a = np.array(base, dtype=np.float32, copy=True)
     scale = max(0.5, max(a.shape[:2]) / 1600)
@@ -352,6 +364,8 @@ def process(base, s):
     # Geometry precedes post-crop vignette and grain.
     if s.rotation:
         a = np.rot90(a, -s.rotation).copy()
+    if s.straighten:
+        a = straighten(a, s.straighten)
     h, w = a.shape[:2]
     box = s.crop_box(w, h)
     if box:

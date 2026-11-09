@@ -15,6 +15,7 @@ const defaults = {
   sharpness: 0,
   vignette: 0,
   rotation: 0,
+  straighten: 0,
   crop: "original",
   crop_x: 0,
   crop_y: 0,
@@ -462,6 +463,7 @@ function presetButtons() {
         settings = {
           ...defaults,
           rotation: settings.rotation,
+          straighten: settings.straighten,
           crop: settings.crop,
           ...p.settings,
         };
@@ -695,6 +697,7 @@ $("presetInput").onchange = async (e) => {
         settings = {
           ...defaults,
           rotation: settings.rotation,
+          straighten: settings.straighten,
           crop: settings.crop,
           ...p.settings,
         };
@@ -843,9 +846,12 @@ $("cropTool").onclick = () => (cropping ? $("cropApply").click() : enterCrop());
 $("cropApply").onclick = () => {
   if (!cropping) return;
   const previous = cropBefore;
+  // Rotation and straightening are chosen inside the tool, so they outlive it.
+  const { rotation, straighten } = settings;
   leaveCrop();
   settings = { ...previous };
   checkpoint();
+  Object.assign(settings, { rotation, straighten });
   applyRect(cropRect);
   if ($("crop").value === "free" && !isFullFrame(cropRect))
     settings.crop = "free";
@@ -865,6 +871,19 @@ $("cropReset").onclick = () => {
   cropRect = { x: 0, y: 0, w: 1, h: 1 };
   layoutCropBox();
 };
+// Straightening keeps the frame's ratio, so the crop rectangle stays valid.
+$("s-straighten").addEventListener("input", (e) => {
+  if (!cropping) return;
+  settings.straighten = Number(e.target.value);
+  syncControls();
+  schedulePreview();
+});
+$("s-straighten").addEventListener("dblclick", () => {
+  if (!cropping) return;
+  settings.straighten = 0;
+  syncControls();
+  schedulePreview();
+});
 function isFullFrame(r) {
   return r.x === 0 && r.y === 0 && r.w === 1 && r.h === 1;
 }

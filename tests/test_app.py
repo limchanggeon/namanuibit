@@ -205,6 +205,20 @@ def test_free_crop_rectangle(client):
     assert client.post(f"/api/photos/{p['id']}/preview", json=off).status_code == 422
 
 
+def test_straighten_trims_to_same_ratio(client):
+    p = photo(client)
+    s = {"straighten": 10}
+    # 120x80 turned 10° leaves a centred 3:2 rectangle of about 0.8 scale.
+    frame = client.post(f"/api/photos/{p['id']}/frame", json=s)
+    assert Image.open(BytesIO(frame.content)).size == (96, 64)
+    # The crop rectangle is a fraction of the straightened frame.
+    half = {**s, "crop_w": 0.5}
+    r = client.post(f"/api/photos/{p['id']}/export", json={"settings": half})
+    assert Image.open(BytesIO(r.content)).size == (48, 64)
+    bad = {"straighten": 46}
+    assert client.post(f"/api/photos/{p['id']}/preview", json=bad).status_code == 422
+
+
 def test_named_ratio_still_crops_for_old_libraries(client):
     p = photo(client)
     r = client.post(f"/api/photos/{p['id']}/export", json={"settings": {"crop": "1:1"}})

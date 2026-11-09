@@ -152,6 +152,19 @@
         </div>
         <div class="crop-bar" id="cropBar" hidden>
           <span>모서리를 끌어 영역을 정하고, 안쪽을 끌어 옮기세요.</span>
+          <div class="slider straighten">
+            <label for="s-straighten"
+              >수평 맞추기<output id="v-straighten">0</output></label
+            ><input
+              type="range"
+              id="s-straighten"
+              min="-45"
+              max="45"
+              step="0.1"
+              value="0"
+              title="두 번 클릭하면 0°로 되돌립니다"
+            />
+          </div>
           <div>
             <button id="cropReset">전체 선택</button
             ><button id="cropCancel">취소</button

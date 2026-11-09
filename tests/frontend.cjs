@@ -307,6 +307,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const ratio = w.document.getElementById("crop");
   ratio.value = "1:1";
   ratio.dispatchEvent(new w.Event("change"));
+  const level = w.document.getElementById("s-straighten");
+  level.value = "-2.5";
+  level.dispatchEvent(new w.Event("input"));
   w.document.getElementById("cropApply").click();
   await wait(60);
   const cropped = calls
@@ -319,6 +322,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     `crop_w was ${cropped.crop_w}`,
   );
   assert.equal(cropped.crop_h, 1);
+  assert.equal(cropped.straighten, -2.5);
   assert(
     Math.abs(cropped.crop_x - 1 / 6) < 0.01,
     `crop_x was ${cropped.crop_x}`,

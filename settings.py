@@ -23,6 +23,9 @@ class Settings(AdvancedSettings):
     sharpness: float = Field(0, ge=0, le=150)
     vignette: float = Field(0, ge=-100, le=100)
     rotation: int = Field(0, ge=0, le=3)
+    # Fine rotation in degrees, clockwise; the frame is then trimmed to the
+    # largest same-ratio rectangle inside it, so the crop below stays relative.
+    straighten: float = Field(0, ge=-45, le=45)
     # `crop` names the ratio the crop tool is locked to, which the UI needs to
     # restore its state. The rectangle below is what actually gets cut, in
     # fractions of the rotated frame, so a free crop needs no named ratio.
