@@ -1,0 +1,18 @@
+나만의빛 1.6.0 패치 노트 (2026-11-10)
+
+내려받기
+- macOS : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-macOS-arm64.dmg
+- Windows 설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64-setup.exe
+- Windows 무설치 : https://github.com/limchanggeon/namanuibit/releases/latest/download/Namanuibit-windows-x64.zip
+
+
+■ 신규
+
+- 내보낸 사진에 촬영 정보(EXIF)가 들어갑니다. 카메라 기종, 조리개, 셔터 속도, ISO, 초점거리, 촬영 시각이 그대로 남아 사진 앱의 날짜순 정렬이나 SNS 촬영 정보 표시가 제대로 됩니다.
+- 위치 정보(GPS)는 기본으로 넣지 않습니다. 필요하면 내보내기 창에서 "위치 정보(GPS) 포함"을 켜 주세요.
+
+
+■ 참고
+
+- 사진은 현상할 때 이미 바로 세워지므로, 방향 정보는 정방향으로 기록합니다. 다른 앱에서 사진이 한 번 더 돌아가지 않습니다.
+- 캐논 CR3처럼 일부 RAW 형식은 촬영 정보를 읽지 못해 EXIF 없이 내보냅니다. 소니 ARW, 니콘 NEF, DNG, CR2, JPEG는 지원합니다.
