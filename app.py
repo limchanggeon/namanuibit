@@ -1,4 +1,5 @@
 from concurrent.futures import ProcessPoolExecutor
+import functools
 from pathlib import Path
 import json, uuid, os, shutil, sqlite3, threading, time
 import numpy as np
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import paths
 import render_worker
-from engine import level_angle
+from geometry import estimate, warp, automatic_geometry, level_by_votes
 import updater
 from render_worker import RASTER, RAW, decode, encode
 from settings import FORMATS, Settings
@@ -256,20 +257,35 @@ def thumbnail(pid: str):
     return FileResponse(DATA / pid / "thumb.jpg")
 
 
-@app.post("/api/photos/{pid}/preview")
-def preview(pid: str, s: Settings):
-    record(pid)
-    with Image.open(DATA / pid / "preview.png") as im:
+@functools.lru_cache(maxsize=6)
+def _proxy(path, mtime, draft):
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        if draft:
+            im.thumbnail((800, 800), Image.Resampling.LANCZOS)
         a = np.asarray(im, dtype=np.float32) / 255
+    a.flags.writeable = False  # shared between requests
+    return a
+
+
+def proxy(pid, draft=False):
+    """The decoded preview, kept in memory: every slider move re-renders it."""
+    path = DATA / pid / "preview.png"
+    return _proxy(path, path.stat().st_mtime_ns, draft)
+
+
+@app.post("/api/photos/{pid}/preview")
+def preview(pid: str, s: Settings, draft: bool = False):
+    record(pid)
+    a = proxy(pid, draft)
     return Response(encode(render(a, s)), media_type="image/jpeg")
 
 
 @app.post("/api/photos/{pid}/frame")
-def frame(pid: str, s: Settings):
+def frame(pid: str, s: Settings, draft: bool = False):
     """The proxy with every adjustment but the crop, for the crop tool to sit on."""
     record(pid)
-    with Image.open(DATA / pid / "preview.png") as im:
-        a = np.asarray(im, dtype=np.float32) / 255
+    a = proxy(pid, draft)
     uncropped = s.model_copy(
         update={"crop_x": 0, "crop_y": 0, "crop_w": 1, "crop_h": 1, "crop": "original"}
     )
@@ -277,12 +293,34 @@ def frame(pid: str, s: Settings):
 
 
 @app.post("/api/photos/{pid}/level")
-def level(pid: str, s: Settings):
+def level(pid: str, s: Settings, perspective: bool = False):
     """Straighten angle that levels the photo as currently turned, or None."""
     record(pid)
-    with Image.open(DATA / pid / "preview.png") as im:
-        a = np.asarray(im.convert("RGB"), dtype=np.float32) / 255
-    return {"angle": level_angle(np.rot90(a, -s.rotation))}
+    a = proxy(pid)
+    a = np.rot90(a, -s.rotation)
+    # Analyse after the chosen lens correction, before automatic perspective.
+    original_radius = np.hypot(a.shape[1] - 1, a.shape[0] - 1)
+    a = warp(a, distortion=s.lens_distortion,
+             vertical=0 if perspective else s.perspective_vertical,
+             horizontal=0 if perspective else s.perspective_horizontal)
+    result = estimate(a, perspective=perspective)
+    if not result["perspective"]:
+        voted = level_by_votes(a)  # more reliable than traced lines for roll alone
+        if voted is not None:
+            result.update(angle=voted, vertical=0.0, horizontal=0.0)
+    if perspective and result["angle"] is not None:
+        ratio = np.hypot(a.shape[1] - 1, a.shape[0] - 1) / max(1, original_radius)
+        for key in ("vertical", "horizontal"):
+            result[key] = round(float(np.clip(result[key] / max(.01, ratio), -100, 100)), 1)
+    return result
+
+
+@app.post("/api/photos/{pid}/auto-geometry")
+def auto_geometry(pid: str, s: Settings):
+    """One-click image-based lens, rotation and perspective estimation."""
+    record(pid)
+    a = proxy(pid)
+    return automatic_geometry(np.rot90(a, -s.rotation), s.lens_distortion)
 
 
 @app.put("/api/photos/{pid}/settings")

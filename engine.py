@@ -3,8 +3,9 @@
 import colorsys
 import numpy as np
 from PIL import Image
-from scipy.ndimage import gaussian_filter, gaussian_filter1d, minimum_filter, rotate, sobel
+from scipy.ndimage import gaussian_filter, minimum_filter, rotate, sobel
 from adjustments import COLORS
+from geometry import warp, estimate
 
 LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
@@ -330,52 +331,9 @@ def straighten(a, degrees):
     return a[y : y + nh, x : x + nw]
 
 
-def _lean(a):
-    """Dominant clockwise tilt off the nearest axis, or None if no line stands out."""
-    g = gaussian_filter(luminance(a), 2)
-    gx, gy = sobel(g, axis=1), sobel(g, axis=0)
-    mag = np.hypot(gx, gy)
-    strong = mag > np.percentile(mag, 90)
-    if not mag[strong].sum():
-        return None
-    lean = (np.degrees(np.arctan2(gy[strong], gx[strong])) + 45) % 90 - 45
-    # Squaring favours long hard edges over texture.
-    weight = mag[strong] ** 2
-    votes, edges = np.histogram(lean, bins=900, range=(-45, 45), weights=weight)
-    votes = gaussian_filter1d(votes, 4, mode="wrap")
-    # Real tilts are small; a steep peak is usually a roof or a diagonal subject.
-    centres = (edges[:-1] + edges[1:]) / 2
-    peak = int(np.where(np.abs(centres) <= 20, votes, 0).argmax())
-    # shortcut: a fixed peak-to-median ratio, tune against real photos if it misfires.
-    if votes[peak] < 3 * np.median(votes):
-        return None
-    centre = centres[peak]
-    near = np.abs(lean - centre) < 1
-    return -float(np.average(lean[near], weights=weight[near]))
-
-
 def level_angle(a):
-    """Straighten angle that levels the strongest near-axis lines, or None.
-
-    Every strong edge votes for how far its line leans off horizontal or
-    vertical, which finds the tilt to within a degree or so. The final 0.1°
-    comes from turning the edge map until its rows and columns line up best.
-    """
-    step = max(1, max(a.shape[:2]) // 1000)
-    a = a[::step, ::step]
-    first = _lean(a)
-    if first is None:
-        return None
-    g = gaussian_filter(luminance(a), 1)
-    edges = np.hypot(sobel(g, axis=1), sobel(g, axis=0))
-
-    def alignment(degrees):
-        e = straighten(edges[..., None], degrees)[..., 0]
-        return (e.sum(axis=0) ** 2).mean() + (e.sum(axis=1) ** 2).mean()
-
-    candidates = np.round(np.arange(first - 1.5, first + 1.51, 0.1), 1)
-    best = max(candidates, key=alignment)
-    return float(max(-45, min(45, best)))
+    """Clockwise correction from coherent near-axis lines; None when ambiguous."""
+    return estimate(a)["angle"]
 
 
 def process(base, s):
@@ -412,7 +370,10 @@ def process(base, s):
     # Geometry precedes post-crop vignette and grain.
     if s.rotation:
         a = np.rot90(a, -s.rotation).copy()
-    if s.straighten:
+    if s.perspective_vertical or s.perspective_horizontal or s.lens_distortion:
+        a = warp(a, s.straighten, s.perspective_vertical,
+                 s.perspective_horizontal, s.lens_distortion)
+    elif s.straighten:
         a = straighten(a, s.straighten)
     h, w = a.shape[:2]
     box = s.crop_box(w, h)

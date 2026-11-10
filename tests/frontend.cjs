@@ -19,14 +19,18 @@ const dom = new JSDOM(fs.readFileSync("static/index.html", "utf8"), {
 });
 const w = dom.window;
 const SAVED = "/Users/me/Pictures/test-나만의빛.jpg";
+let heldLevel = null;
+let autoResult = { angle: 1.5, vertical: 22, horizontal: -12, perspective: true, distortion: 45, lens_lines: 5 };
 let jobPolls = 0;
 let updatePolls = 0;
 w.fetch = async (url, opts = {}) => {
   calls.push({ url, ...opts });
+  if ((url.includes("/level") || url.includes("/auto-geometry")) && heldLevel) await heldLevel;
   const body = () => {
     if (url === "/api/photos") return [photo];
     if (url === "/api/presets") return [];
-    if (url.endsWith("/level")) return { angle: 1.5 };
+    if (url.endsWith("/auto-geometry")) return autoResult;
+    if (url.includes("/level")) return { angle: 1.5, vertical: 22, horizontal: -12, perspective: true };
     if (url === "/api/export") return { job: "job1", total: 1 };
     if (url.startsWith("/api/update/download")) {
       if (opts.method === "POST")
@@ -335,8 +339,82 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   );
   assert.equal(w.document.getElementById("cropOverlay").hidden, true);
 
-  // Deleting asks first, then drops the photo from the library.
-  w.document.getElementById("deletePhoto").click();
+  assert.equal(cropped.crop, "1:1", "selected ratio survives apply");
+  // Presets keep the exact crop and geometry, not just the ratio name.
+  w.document.querySelectorAll("#presets .preset")[1].click();
+  await wait(20);
+  const presetSaved = JSON.parse(calls.filter(c => c.method === "PUT").at(-1).body);
+  assert.equal(presetSaved.crop_x, cropped.crop_x);
+  assert.equal(presetSaved.crop_w, cropped.crop_w);
+  w.document.getElementById("cropTool").click();
+  await wait(20);
+  const lens = w.document.getElementById("s-lens_distortion");
+  lens.value = "30"; lens.dispatchEvent(new w.Event("input"));
+  lens.dispatchEvent(new w.Event("change"));
+  w.document.getElementById("autoUpright").click();
+  await wait(30);
+  assert.equal(w.document.getElementById("s-perspective_vertical").value, "22");
+  w.document.getElementById("cropApply").click();
+  await wait(20);
+  const geometrySaved = JSON.parse(calls.filter(c => c.method === "PUT").at(-1).body);
+  assert.equal(w.document.getElementById("cropOverlay").hidden, true, "auto commits without a second apply click");
+  assert.equal(geometrySaved.lens_distortion, 45);
+  assert.equal(geometrySaved.perspective_horizontal, -12);
+  w.document.getElementById("undo").click();
+  assert.equal(lens.value, "0");
+  w.document.getElementById("redo").click();
+  assert.equal(lens.value, "45");
+  // A late auto result must not modify a cancelled or reopened crop session.
+  let releaseLevel;
+  heldLevel = new Promise(resolve => releaseLevel = resolve);
+  w.document.getElementById("cropTool").click();
+  w.document.getElementById("autoLevel").click();
+  w.document.getElementById("cropCancel").click();
+  w.document.getElementById("cropTool").click();
+  level.value = "6"; level.dispatchEvent(new w.Event("input"));
+  releaseLevel(); heldLevel = null;
+  await wait(30);
+  assert.equal(level.value, "6", "stale auto result was ignored");
+  w.document.getElementById("cropCancel").click();
+
+  // One click from the normal editor saves all geometry, without opening crop.
+  autoResult = { ...autoResult, angle: -2, distortion: -30 };
+  const countBefore = calls.filter(c => c.method === "PUT").length;
+  w.document.getElementById("autoGeometry").click();
+  await wait(30);
+  const autoSaved = JSON.parse(calls.filter(c => c.method === "PUT").at(-1).body);
+  assert.equal(autoSaved.lens_distortion, -30);
+  assert.equal(autoSaved.straighten, -2);
+  assert.equal(autoSaved.crop_x, geometrySaved.crop_x);
+  assert.equal(calls.filter(c => c.method === "PUT").length, countBefore + 1);
+  w.document.getElementById("undo").click();
+  assert.equal(lens.value, "45", "one undo restores the entire correction");
+  assert.equal(level.value, "1.5");
+  w.document.getElementById("redo").click();
+  assert.equal(lens.value, "-30");
+  await wait(20);
+  // Ambiguous photos retain all settings and do not create a save or undo entry.
+  autoResult = { angle: null, distortion: null };
+  const savesBeforeAmbiguous = calls.filter(c => c.method === "PUT").length;
+  w.document.getElementById("autoGeometry").click();
+  await wait(30);
+  assert.equal(calls.filter(c => c.method === "PUT").length, savesBeforeAmbiguous);
+  assert.equal(lens.value, "-30");
+  // A manual edit made during analysis wins over the response.
+  autoResult = { angle: 8, vertical: 0, horizontal: 0, distortion: 60 };
+  heldLevel = new Promise(resolve => releaseLevel = resolve);
+  w.document.getElementById("autoGeometry").click();
+  w.document.getElementById("cropTool").click();
+  lens.value = "10"; lens.dispatchEvent(new w.Event("input"));
+  releaseLevel(); heldLevel = null;
+  await wait(30);
+  assert.equal(lens.value, "10");
+  w.document.getElementById("cropCancel").click();
+
+  // ⌘⌫ deletes even while a slider still has focus; it asks first.
+  w.document.getElementById("s-exposure").dispatchEvent(
+    new w.KeyboardEvent("keydown", { key: "Backspace", metaKey: true, bubbles: true }),
+  );
   await wait(30);
   assert.equal(
     w.document.getElementById("confirmDialog").hasAttribute("open"),

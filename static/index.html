@@ -123,6 +123,7 @@
             ><button id="redo" title="다시 실행 (⇧⌘Z)">↷</button
             ><span class="separator"></span
             ><button id="rotate" title="오른쪽 90° 회전">⟳</button
+            ><button id="autoGeometry" title="렌즈 왜곡·수직·수평을 분석해 한 번에 적용합니다">자동 보정</button
             ><button id="cropTool" title="자르기 (C)" aria-pressed="false">
               ⛶ 자르기</button
             ><select id="crop" aria-label="자르기 비율">
@@ -151,27 +152,23 @@
           </div>
         </div>
         <div class="crop-bar" id="cropBar" hidden>
-          <span>모서리를 끌어 영역을 정하고, 안쪽을 끌어 옮기세요.</span>
-          <div class="slider straighten">
-            <label for="s-straighten"
-              >수평 맞추기<output id="v-straighten">0</output></label
-            ><input
-              type="range"
-              id="s-straighten"
-              min="-45"
-              max="45"
-              step="0.1"
-              value="0"
-              title="두 번 클릭하면 0°로 되돌립니다"
-            /><button id="autoLevel" title="수직·수평선을 찾아 자동으로 맞춥니다">
-              자동
-            </button>
+          <div class="geometry-heading"><span>자르기 · 기하 보정</span><div>
+            <button id="autoUpright" class="primary" title="렌즈 왜곡·수직·수평을 분석해 한 번에 적용합니다">자동 보정</button>
+            <button id="geometryReset">보정 초기화</button>
+          </div></div>
+          <details class="geometry-manual"><summary>직접 조절</summary>
+          <button id="autoLevel" title="긴 직선을 기준으로 회전 각도만 맞춥니다">수평만 자동</button>
+          <div class="geometry-sliders">
+            <div class="slider"><label for="s-straighten">회전 (°)<output id="v-straighten">0</output></label><input type="range" id="s-straighten" min="-45" max="45" step="0.1" value="0" title="두 번 클릭하면 0으로 되돌립니다"></div>
+            <div class="slider"><label for="s-perspective_vertical">수직 원근<output id="v-perspective_vertical">0</output></label><input type="range" id="s-perspective_vertical" min="-100" max="100" step="0.1" value="0" title="두 번 클릭하면 0으로 되돌립니다"></div>
+            <div class="slider"><label for="s-perspective_horizontal">수평 원근<output id="v-perspective_horizontal">0</output></label><input type="range" id="s-perspective_horizontal" min="-100" max="100" step="0.1" value="0" title="두 번 클릭하면 0으로 되돌립니다"></div>
+            <div class="slider"><label for="s-lens_distortion">렌즈 왜곡<output id="v-lens_distortion">0</output></label><input type="range" id="s-lens_distortion" min="-100" max="100" step="0.1" value="0" title="두 번 클릭하면 0으로 되돌립니다"></div>
           </div>
-          <div>
-            <button id="cropReset">전체 선택</button
-            ><button id="cropCancel">취소</button
-            ><button class="primary" id="cropApply">적용</button>
-          </div>
+          </details>
+          <p class="control-help" id="geometryStatus" role="status">자동 보정을 누르면 렌즈 왜곡·수직·수평을 분석하고 빈 가장자리까지 정리해 적용합니다.</p>
+          <div class="geometry-actions"><span>모서리를 끌어 자르기 영역을 정하세요.</span><div>
+            <button id="cropReset">전체 선택</button><button id="cropCancel">취소</button><button class="primary" id="cropApply">적용</button>
+          </div></div>
         </div>
         <section class="filmstrip">
           <div class="filmstrip-header">

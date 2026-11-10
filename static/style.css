@@ -1436,3 +1436,21 @@ img {
 #updateProgress {
   margin: 0 0 22px;
 }
+
+/* Geometry controls wrap inside the centre workspace. */
+.crop-bar { display: block; padding: 10px 16px; }
+.crop-bar .geometry-heading, .crop-bar .geometry-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.geometry-heading > div, .geometry-actions > div { display: flex; gap: 4px; }
+.crop-bar .geometry-sliders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin-top: 12px; }
+.crop-bar .slider { display: block; width: auto; }
+.crop-bar .slider label { display: flex; }
+.crop-bar button { font-size: 10px; padding: 6px 8px; }
+.crop-bar .control-help { margin: 6px 0; }
+.cropping .stage { min-height: 150px; }
+
+.geometry-manual { margin-top: 8px; padding-top: 8px; }
+.geometry-manual > summary { margin-bottom: 8px; font-size: 10px; }
+.canvas-toolbar { flex-wrap: wrap; height: auto; min-height: 48px; }
+.canvas-toolbar button { white-space: nowrap; }
+#autoGeometry { color: var(--accent); border: 1px solid #d6b88b55; }
+#autoGeometry:disabled { opacity: .5; }

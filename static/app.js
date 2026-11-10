@@ -16,6 +16,9 @@ const defaults = {
   vignette: 0,
   rotation: 0,
   straighten: 0,
+  perspective_vertical: 0,
+  perspective_horizontal: 0,
+  lens_distortion: 0,
   crop: "original",
   crop_x: 0,
   crop_y: 0,
@@ -34,6 +37,10 @@ let photos = [],
   timer,
   toastTimer,
   saveChain = Promise.resolve();
+let previewBusy = false, previewPending = false, previewDraft = false, shownVersion = 0;
+let cropSession = 0, autoRequest = 0;
+const geometryKeys = ["rotation", "straighten", "perspective_vertical", "perspective_horizontal", "lens_distortion", "crop", "crop_x", "crop_y", "crop_w", "crop_h"];
+const geometrySettings = () => Object.fromEntries(geometryKeys.map(k => [k, settings[k]]));
 let selected = new Set();
 let lastClicked = null;
 let custom = [];
@@ -258,9 +265,9 @@ for (const [name, rows] of groups) {
       before = false;
       $("compare").classList.remove("active");
       syncControls();
-      schedulePreview();
+      schedulePreview(zoomMode === "fit");
     });
-    input.addEventListener("change", () => persist());
+    input.addEventListener("change", () => { schedulePreview(); persist(); });
     input.addEventListener("dblclick", () => {
       if (!current) return;
       checkpoint();
@@ -331,6 +338,7 @@ function syncControls() {
     "zoomOut",
     "infoButton",
     "cropTool",
+    "autoGeometry",
     "deletePhoto",
   ])
     $(id).disabled = !current;
@@ -368,7 +376,7 @@ function changed() {
   persist();
 }
 function persist() {
-  if (!current) return;
+  if (!current || cropping) return;
   const pid = current.id,
     snapshot = { ...settings };
   current.settings = snapshot;
@@ -385,43 +393,64 @@ function persist() {
       toast(e.message);
     });
 }
-function schedulePreview() {
+function schedulePreview(draft = false) {
   previewVersion++;
+  previewDraft = draft;
   clearTimeout(timer);
-  timer = setTimeout(() => updatePreview(), 140);
+  if (draft) return updatePreview(true);
+  // A small frame answers a click at once; full quality queues right behind it.
+  if (zoomMode === "fit") updatePreview(true);
+  updatePreview(false);
 }
-async function updatePreview() {
+async function updatePreview(draft = false) {
   if (!current) return;
-  const version = ++previewVersion,
-    pid = current.id;
+  previewDraft = draft;
+  previewVersion++;
+  if (previewBusy) {
+    previewPending = true;
+    return;
+  }
+  previewBusy = true;
+  const version = previewVersion, pid = current.id, session = cropSession, wasBefore = before;
+  // Show every answer newer than what is on screen, never an older one.
+  const stale = () => pid !== current?.id || session !== cropSession || wasBefore !== before ||
+    version < shownVersion;
+  const endpoint = cropping ? "frame" : "preview";
   try {
     const res = await api(
-      `/api/photos/${pid}/${cropping ? "frame" : "preview"}`,
+      `/api/photos/${pid}/${endpoint}${draft ? "?draft=true" : ""}`,
       json("POST", before ? defaults : settings),
     );
     const blob = await res.blob();
-    if (version !== previewVersion || pid !== current?.id) return;
-    const next = URL.createObjectURL(blob),
-      img = new Image();
+    if (stale()) return;
+    const next = URL.createObjectURL(blob), img = new Image();
     img.onload = () => {
-      if (version !== previewVersion) {
+      if (stale()) {
         URL.revokeObjectURL(next);
         return;
       }
       if (previewURL) URL.revokeObjectURL(previewURL);
       previewURL = next;
+      shownVersion = version;
+      $("preview").onload = () => { applyZoom(); layoutCropBox(); };
       $("preview").src = next;
       $("preview").hidden = false;
       $("beforeBadge").hidden = !before;
-      applyZoom();
-      layoutCropBox();
       histogram(img);
     };
+    img.onerror = () => URL.revokeObjectURL(next);
     img.src = next;
   } catch (e) {
-    toast(e.message);
+    if (pid === current?.id && version === previewVersion) toast(e.message);
+  } finally {
+    previewBusy = false;
+    if (previewPending) {
+      previewPending = false;
+      updatePreview(previewDraft);
+    }
   }
 }
+
 function histogram(img) {
   const c = document.createElement("canvas");
   c.width = 240;
@@ -478,9 +507,7 @@ function presetButtons() {
         checkpoint();
         settings = {
           ...defaults,
-          rotation: settings.rotation,
-          straighten: settings.straighten,
-          crop: settings.crop,
+          ...geometrySettings(),
           ...p.settings,
         };
         changed();
@@ -560,6 +587,7 @@ function renderStrip() {
   }
 }
 function select(photo) {
+  if (cropping) leaveCrop();
   clearTimeout(timer);
   previewVersion++;
   current = photo;
@@ -712,9 +740,7 @@ $("presetInput").onchange = async (e) => {
         checkpoint();
         settings = {
           ...defaults,
-          rotation: settings.rotation,
-          straighten: settings.straighten,
-          crop: settings.crop,
+          ...geometrySettings(),
           ...p.settings,
         };
         changed();
@@ -747,12 +773,14 @@ window.addEventListener("drop", (e) => {
   if (e.dataTransfer?.files?.length) importPhotos(e.dataTransfer.files);
 });
 $("undo").onclick = () => {
+  if (cropping) $("cropCancel").click();
   if (!history.length) return;
   future.push({ ...settings });
   settings = history.pop();
   changed();
 };
 $("redo").onclick = () => {
+  if (cropping) $("cropCancel").click();
   if (!future.length) return;
   history.push({ ...settings });
   settings = future.pop();
@@ -760,6 +788,7 @@ $("redo").onclick = () => {
 };
 $("reset").onclick = () => {
   if (!current) return;
+  if (cropping) $("cropCancel").click();
   checkpoint();
   settings = { ...defaults };
   changed();
@@ -770,13 +799,21 @@ $("reset").onclick = () => {
 $("rotate").onclick = () => {
   if (!current) return;
   if (cropping) {
+    autoRequest++;
     settings.rotation = (settings.rotation + 1) % 4;
+    [settings.perspective_vertical, settings.perspective_horizontal] =
+      [settings.perspective_horizontal, -settings.perspective_vertical];
     cropRect = { x: 0, y: 0, w: 1, h: 1 };
     updatePreview().then(layoutCropBox);
     return;
   }
   checkpoint();
   settings.rotation = (settings.rotation + 1) % 4;
+  [settings.perspective_vertical, settings.perspective_horizontal] =
+    [settings.perspective_horizontal, -settings.perspective_vertical];
+  const { crop_x: x, crop_y: y, crop_w: w, crop_h: h } = settings;
+  applyRect({ x: 1 - y - h, y: x, w: h, h: w });
+  settings.crop = "free";
   changed();
 };
 // --- crop ---------------------------------------------------------------------
@@ -838,8 +875,13 @@ function layoutCropBox() {
 async function enterCrop() {
   if (!current || cropping) return;
   cropping = true;
+  cropSession++;
   cropBefore = { ...settings };
+  before = false;
+  $("compare").classList.remove("active");
   cropRect = rectFromSettings();
+  if (isFullFrame(cropRect) && !["free", "custom", "original"].includes(settings.crop))
+    cropRect = centredRect(settings.crop);
   setZoom("fit");
   $("cropTool").classList.add("active");
   $("cropTool").setAttribute("aria-pressed", "true");
@@ -850,6 +892,10 @@ async function enterCrop() {
   layoutCropBox();
 }
 function leaveCrop() {
+  cropSession++;
+  autoRequest++;
+  clearTimeout(timer);
+  previewVersion++;
   cropping = false;
   cropDrag = null;
   $("cropTool").classList.remove("active");
@@ -863,14 +909,12 @@ $("cropApply").onclick = () => {
   if (!cropping) return;
   const previous = cropBefore;
   // Rotation and straightening are chosen inside the tool, so they outlive it.
-  const { rotation, straighten } = settings;
+  const edited = { ...settings, crop: $("crop").value };
   leaveCrop();
   settings = { ...previous };
   checkpoint();
-  Object.assign(settings, { rotation, straighten });
+  settings = edited;
   applyRect(cropRect);
-  if ($("crop").value === "free" && !isFullFrame(cropRect))
-    settings.crop = "free";
   changed();
 };
 $("cropCancel").onclick = () => {
@@ -887,38 +931,113 @@ $("cropReset").onclick = () => {
   cropRect = { x: 0, y: 0, w: 1, h: 1 };
   layoutCropBox();
 };
-// Straightening keeps the frame's ratio, so the crop rectangle stays valid.
-$("s-straighten").addEventListener("input", (e) => {
-  if (!cropping) return;
-  settings.straighten = Number(e.target.value);
-  syncControls();
-  schedulePreview();
-});
-$("s-straighten").addEventListener("dblclick", () => {
-  if (!cropping) return;
-  settings.straighten = 0;
-  syncControls();
-  schedulePreview();
-});
-$("autoLevel").onclick = async () => {
-  if (!cropping) return;
-  const button = $("autoLevel");
-  button.disabled = true;
-  try {
-    const { angle } = await (
-      await api(`/api/photos/${current.id}/level`, json("POST", settings))
-    ).json();
-    if (angle === null) return toast("맞출 만한 수직·수평선을 찾지 못했습니다.");
-    settings.straighten = angle;
+// All geometry shares the same draft/full-quality path and crop transaction.
+for (const key of ["straighten", "perspective_vertical", "perspective_horizontal", "lens_distortion"]) {
+  $("s-" + key).addEventListener("input", (e) => {
+    if (!cropping) return;
+    autoRequest++;
+    settings[key] = Number(e.target.value);
+    syncControls();
+    schedulePreview(true);
+  });
+  $("s-" + key).addEventListener("change", () => { if (cropping) schedulePreview(); });
+  $("s-" + key).addEventListener("dblclick", () => {
+    if (!cropping) return;
+    autoRequest++;
+    settings[key] = 0;
     syncControls();
     schedulePreview();
-    toast(angle ? `${angle > 0 ? "+" : ""}${angle}° 맞췄습니다.` : "이미 수평입니다.");
+  });
+}
+async function autoGeometry(perspective) {
+  if (!cropping) return;
+  const pid = current.id, session = cropSession, request = ++autoRequest;
+  const snapshot = JSON.stringify(settings);
+  const buttons = [$("autoLevel"), $("autoUpright")];
+  buttons.forEach(b => b.disabled = true);
+  $("geometryStatus").textContent = "사진 속 직선을 분석하고 있습니다…";
+  try {
+    const result = await (await api(
+      `/api/photos/${pid}/level${perspective ? "?perspective=true" : ""}`,
+      json("POST", settings),
+    )).json();
+    if (!cropping || pid !== current?.id || session !== cropSession || request !== autoRequest || snapshot !== JSON.stringify(settings)) return;
+    if (result.angle === null) {
+      $("geometryStatus").textContent = "기준이 될 직선이 부족합니다. 수동 슬라이더로 조절하세요.";
+      return;
+    }
+    settings.straighten = result.angle;
+    if (perspective) {
+      settings.perspective_vertical = result.vertical || 0;
+      settings.perspective_horizontal = result.horizontal || 0;
+    }
+    syncControls();
+    schedulePreview();
+    $("geometryStatus").textContent = perspective && result.perspective
+      ? "감지한 직선의 기울기와 원근을 맞췄습니다. 결과를 확인한 뒤 적용하세요."
+      : "기울기를 맞췄습니다. 원근 보정에는 떨어져 있는 여러 직선이 필요합니다.";
   } catch (e) {
-    toast(e.message);
+    if (session === cropSession) toast(e.message);
   } finally {
-    button.disabled = false;
+    buttons.forEach(b => b.disabled = false);
   }
+}
+$("autoLevel").onclick = () => autoGeometry(false);
+// Main action commits all supported geometry as one undoable edit.
+async function automaticCorrection() {
+  if (!current || $("autoGeometry").dataset.running) return;
+  const pid = current.id, session = cropSession, request = ++autoRequest;
+  const snapshot = JSON.stringify(settings), rect = JSON.stringify(cropRect);
+  const buttons = [$("autoGeometry"), $("autoUpright"), $("autoLevel")];
+  const labels = buttons.map(b => b.textContent);
+  $("autoGeometry").dataset.running = "true";
+  buttons.forEach(b => b.disabled = true);
+  $("autoGeometry").textContent = $("autoUpright").textContent = "분석 중…";
+  const status = message => { $("geometryStatus").textContent = message; toast(message); };
+  try {
+    const result = await (await api(`/api/photos/${pid}/auto-geometry`, json("POST", settings))).json();
+    if (pid !== current?.id || session !== cropSession || request !== autoRequest || snapshot !== JSON.stringify(settings) || rect !== JSON.stringify(cropRect)) return;
+    if (result.angle === null && result.distortion === null) {
+      status("보정할 기준을 충분히 찾지 못해 사진을 그대로 유지했습니다.");
+      return;
+    }
+    const next = { ...settings };
+    if (result.distortion !== null) next.lens_distortion = result.distortion;
+    if (result.angle !== null) {
+      next.straighten = result.angle;
+      next.perspective_vertical = result.vertical || 0;
+      next.perspective_horizontal = result.horizontal || 0;
+    }
+    if (cropping) {
+      settings = next;
+      $("cropApply").click();
+    } else if (JSON.stringify(next) !== snapshot) {
+      checkpoint();
+      settings = next;
+      changed();
+    }
+    const done = [];
+    if (result.distortion !== null) done.push("렌즈 왜곡");
+    if (result.angle !== null) done.push(result.perspective ? "수직·수평" : "수평");
+    status(`${done.join(" · ")} 자동 보정을 적용했습니다. ⌘/Ctrl+Z로 되돌릴 수 있습니다.` +
+      (result.distortion === null ? "\n렌즈 왜곡은 판단 근거가 부족하거나 뚜렷하지 않아 기존 값을 유지했습니다." : ""));
+  } catch (e) {
+    if (pid === current?.id && session === cropSession) status(e.message);
+  } finally {
+    delete $("autoGeometry").dataset.running;
+    buttons.forEach((b, i) => { b.textContent = labels[i]; b.disabled = !current; });
+  }
+}
+$("autoGeometry").onclick = automaticCorrection;
+$("autoUpright").onclick = automaticCorrection;
+$("geometryReset").onclick = () => {
+  if (!cropping) return;
+  autoRequest++;
+  for (const key of ["straighten", "perspective_vertical", "perspective_horizontal", "lens_distortion"]) settings[key] = 0;
+  syncControls();
+  schedulePreview();
 };
+
 function isFullFrame(r) {
   return r.x === 0 && r.y === 0 && r.w === 1 && r.h === 1;
 }
@@ -1576,6 +1695,13 @@ document.addEventListener("keydown", (e) => {
     if (e.shiftKey && e.key.toLowerCase() === "a")
       return (e.preventDefault(), $("selectAll").click());
   }
+  // Delete (Windows) or ⌘⌫ / ⌫ (macOS) removes photos, unless the user is typing.
+  const typing = e.target.tagName === "TEXTAREA" ||
+    (e.target.tagName === "INPUT" && !["range", "checkbox", "button"].includes(e.target.type));
+  if ((e.key === "Delete" || e.key === "Backspace") && !typing && !e.altKey && !cropping) {
+    e.preventDefault();
+    return selected.size > 1 ? $("deleteSelected").click() : $("deletePhoto").click();
+  }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
   if (mod && e.key.toLowerCase() === "z") {
     e.preventDefault();
@@ -1590,10 +1716,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "c") $("cropTool").click();
   if (e.key === "Escape" && cropping) $("cropCancel").click();
   if (e.key === "Enter" && cropping) $("cropApply").click();
-  if (e.key === "Delete" || e.key === "Backspace") {
-    e.preventDefault();
-    selected.size > 1 ? $("deleteSelected").click() : $("deletePhoto").click();
-  }
 });
 initCurveEditor();
 presetButtons();

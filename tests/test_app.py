@@ -465,3 +465,41 @@ def test_update_check_offline(client, monkeypatch):
     monkeypatch.setattr(updater, "fetch_latest", offline)
     updater._checked.update(at=0.0, result=None)
     assert client.get("/api/update?force=true").status_code == 503
+
+
+def test_geometry_preview_export_and_validation(client):
+    p = photo(client)
+    s = {"straighten": 3, "perspective_vertical": 24,
+         "perspective_horizontal": -10, "lens_distortion": 35}
+    preview = client.post(f"/api/photos/{p['id']}/frame", json=s)
+    exported = client.post(f"/api/photos/{p['id']}/export", json={"settings": s, "format": "png"})
+    assert preview.status_code == exported.status_code == 200
+    assert Image.open(BytesIO(preview.content)).size == Image.open(BytesIO(exported.content)).size
+    assert client.put(f"/api/photos/{p['id']}/settings", json=s).status_code == 200
+    for key in s:
+        assert client.post(f"/api/photos/{p['id']}/preview", json={key: 101}).status_code == 422
+    result = client.post(f"/api/photos/{p['id']}/level?perspective=true", json=s)
+    assert result.status_code == 200 and "perspective" in result.json()
+
+
+def test_one_click_geometry_endpoint(client):
+    from tests.test_geometry import grid, distort, radial_scene
+    a=radial_scene(distort(grid(),3,25,-12),.15)
+    out=BytesIO();Image.fromarray(np.uint8(a*255)).save(out,'PNG')
+    p=client.post('/api/photos',files={'file':('lens.png',out.getvalue(),'image/png')}).json()
+    url=f"/api/photos/{p['id']}/auto-geometry"
+    r=client.post(url,json={});assert r.status_code==200
+    result=r.json()
+    assert abs(result['distortion']-45)<4, result
+    assert abs(result['angle']-3)<.5, result
+    assert abs(result['vertical']-25)<3, result
+    assert abs(result['horizontal']+12)<3, result
+    # Repeated clicks estimate from the source, so corrections do not accumulate.
+    s={'straighten':result['angle'],'lens_distortion':result['distortion'],
+       'perspective_vertical':result['vertical'],'perspective_horizontal':result['horizontal']}
+    again=client.post(url,json=s).json()
+    assert again==result
+    # Analysis itself is non-mutating; the client commits one undoable change.
+    saved=client.get('/api/photos').json()[0]['settings']
+    assert saved['lens_distortion']==0
+    assert client.post('/api/photos/missing/auto-geometry',json={}).status_code==404
