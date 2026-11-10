@@ -813,6 +813,12 @@ dialog select {
 dialog output {
   float: right;
 }
+dialog label.export-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
 .export-note {
   color: #788684;
   font-size: 9px;

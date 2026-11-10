@@ -282,6 +282,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const exported = calls.filter((c) => c.url === "/api/export").at(-1);
   const sent = JSON.parse(exported.body);
   assert.equal(sent.dest, SAVED);
+  assert.equal(sent.gps, false); // location is opt-in
   assert.equal(sent.photos.length, 1);
   assert.equal(sent.photos[0].id, photo.id);
   assert(

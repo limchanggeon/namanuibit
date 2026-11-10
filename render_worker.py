@@ -59,7 +59,50 @@ def decode(path):
         return np.asarray(im.convert("RGB"), dtype=np.float32) / 255
 
 
-def encode(im, fmt="jpeg", quality=92):
+# IFD0 tags worth keeping: make, model, software, date, artist, copyright.
+# Offsets, strips and the embedded thumbnail describe the source file only.
+CAMERA_TAGS = (0x010F, 0x0110, 0x0131, 0x0132, 0x013B, 0x8298)
+EXIF_IFD, GPS_IFD = 0x8769, 0x8825
+# MakerNote holds offsets into the original file; interop and pixel sizes are stale.
+DROP_EXIF = (0x927C, 0xA005, 0xA002, 0xA003)
+
+
+def camera_exif(path, gps=False):
+    """The shooting data to carry into an export, or None if none can be read.
+
+    Orientation is written as upright because decoding already applied it.
+    """
+    path = Path(path)
+
+    def copy(src):
+        out = Image.Exif()
+        for tag in CAMERA_TAGS:
+            if tag in src and str(src[tag]).strip():
+                out[tag] = src[tag]
+        shot = {k: v for k, v in src.get_ifd(EXIF_IFD).items() if k not in DROP_EXIF}
+        if shot:
+            out.get_ifd(EXIF_IFD).update(shot)
+        if gps and src.get_ifd(GPS_IFD):
+            out.get_ifd(GPS_IFD).update(src.get_ifd(GPS_IFD))
+        if not len(out) and not shot:
+            return None
+        out[0x0112] = 1
+        return out
+
+    try:
+        if path.suffix.lower() in RAW:
+            # TIFF-based RAWs (ARW, NEF, DNG, CR2…) start with a TIFF header.
+            with path.open("rb") as fp:
+                src = Image.Exif()
+                src.load_from_fp(fp)
+                return copy(src)
+        with Image.open(path) as im:
+            return copy(im.getexif())
+    except Exception:
+        return None  # CR3 and other non-TIFF RAWs: export without EXIF, not fail
+
+
+def encode(im, fmt="jpeg", quality=92, exif=None):
     if fmt == "webp" and max(im.size) > WEBP_MAX_EDGE:
         raise ValueError(
             f"WebP는 긴 변 {WEBP_MAX_EDGE:,}px까지만 저장할 수 있습니다. "
@@ -67,7 +110,8 @@ def encode(im, fmt="jpeg", quality=92):
         )
     out = BytesIO()
     icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
-    im.save(out, format=fmt.upper(), quality=quality, icc_profile=icc)
+    extra = {"exif": exif.tobytes()} if exif is not None else {}
+    im.save(out, format=fmt.upper(), quality=quality, icc_profile=icc, **extra)
     return out.getvalue()
 
 
@@ -75,7 +119,7 @@ def render(base, s):
     return process(base, s)
 
 
-def develop(source, settings, fmt="jpeg", quality=95, long_edge=0, dest=None):
+def develop(source, settings, fmt="jpeg", quality=95, long_edge=0, dest=None, gps=False):
     """Full-size render of one photo. Runs in the pool, so arguments are plain.
 
     Returns the encoded bytes, or the destination path when it wrote the file
@@ -85,7 +129,7 @@ def develop(source, settings, fmt="jpeg", quality=95, long_edge=0, dest=None):
     im = render(decode(Path(source)), s)
     if long_edge:
         im.thumbnail((long_edge, long_edge), Image.Resampling.LANCZOS)
-    data = encode(im, fmt, quality)
+    data = encode(im, fmt, quality, camera_exif(source, gps))
     if dest is None:
         return data
     target = Path(dest)

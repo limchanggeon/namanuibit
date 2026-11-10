@@ -54,6 +54,7 @@ class Export(BaseModel):
     quality: int = Field(95, ge=10, le=100)
     long_edge: int = Field(0, ge=0, le=16000)
     dest: str | None = None
+    gps: bool = False  # location stays private unless asked for
 
 
 class BatchItem(BaseModel):
@@ -66,6 +67,7 @@ class Batch(BaseModel):
     format: str = Field("jpeg", pattern=FORMAT_PATTERN)
     quality: int = Field(95, ge=10, le=100)
     long_edge: int = Field(0, ge=0, le=16000)
+    gps: bool = False
     # A single photo may name its exact file; several need a folder to fill.
     dest: str | None = None
     folder: str | None = None
@@ -97,9 +99,9 @@ def pool():
         return POOL
 
 
-def develop(source, s, fmt="jpeg", quality=95, long_edge=0, dest=None):
+def develop(source, s, fmt="jpeg", quality=95, long_edge=0, dest=None, gps=False):
     """Full-size render, off in the worker process so the window keeps painting."""
-    args = (str(source), s.model_dump(), fmt, quality, long_edge, dest)
+    args = (str(source), s.model_dump(), fmt, quality, long_edge, dest, gps)
     try:
         return pool().submit(render_worker.develop, *args).result()
     except (ValueError, OSError) as error:
@@ -153,6 +155,7 @@ def run_batch(jid, req):
                 req.quality,
                 req.long_edge,
                 dest,
+                req.gps,
             )
         except HTTPException as error:
             failed.append({"name": meta["name"], "error": str(error.detail)})
@@ -354,6 +357,7 @@ def export(pid: str, req: Export):
             req.quality,
             req.long_edge,
             dest,
+            req.gps,
         )
     if dest is None:
         return Response(result, media_type="image/" + req.format)

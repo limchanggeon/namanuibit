@@ -28,6 +28,28 @@ def photo(client, name="test.png"):
     return r.json()
 
 
+def test_export_carries_shooting_data_but_not_location(client):
+    exif = Image.Exif()
+    exif[0x0110] = "TEST-CAM"
+    exif[0x0112] = 6  # stored sideways
+    exif.get_ifd(0x8769).update({0x829D: 2.8, 0x8827: 320, 0x9003: "2026:11:09 13:09:53"})
+    exif.get_ifd(0x8825).update({1: "N", 2: (37.0, 33.0, 0.0)})
+    out = BytesIO()
+    Image.new("RGB", (60, 40), (90, 100, 110)).save(out, "JPEG", exif=exif.tobytes())
+    r = client.post("/api/photos", files={"file": ("cam.jpg", out.getvalue(), "image/jpeg")})
+    pid = r.json()["id"]
+
+    for gps in (False, True):
+        r = client.post(f"/api/photos/{pid}/export", json={"settings": {}, "gps": gps})
+        assert r.status_code == 200, r.text
+        got = Image.open(BytesIO(r.content)).getexif()
+        assert got[0x0110] == "TEST-CAM"
+        # Decoding already turned the pixels upright, so viewers must not turn them again.
+        assert got[0x0112] == 1
+        assert got.get_ifd(0x8769)[0x8827] == 320
+        assert bool(got.get_ifd(0x8825)) is gps
+
+
 def test_import_edit_persist_export(client):
     p = photo(client)
     s = studio.Settings(exposure=1, rotation=1, crop="1:1").model_dump(mode="json")

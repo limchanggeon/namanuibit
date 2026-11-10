@@ -1388,8 +1388,8 @@ function syncExportScope() {
   const count = exportTargets().length;
   $("exportNote").textContent =
     count > 1
-      ? `${count}장을 폴더에 저장합니다 · sRGB 색상 프로필 포함 · 각 사진의 저장된 보정값 적용`
-      : "sRGB 색상 프로필 포함 · 현재 보정 및 자르기 적용";
+      ? `${count}장을 폴더에 저장합니다 · sRGB 색상 프로필 · 촬영 정보(EXIF) 포함 · 각 사진의 저장된 보정값 적용`
+      : "sRGB 색상 프로필 · 촬영 정보(EXIF) 포함 · 현재 보정 및 자르기 적용";
   $("download").disabled = count === 0;
 }
 $("exportScope").onchange = syncExportScope;
@@ -1457,6 +1457,7 @@ $("download").onclick = async () => {
           format,
           quality: Number($("quality").value),
           long_edge: size,
+          gps: $("exportGps").checked,
           dest,
           folder,
         }),
